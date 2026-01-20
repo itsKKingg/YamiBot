@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  yamibot:
+    build:
+      context: .
+      dockerfile: deployment/Dockerfile
+    container_name: yamibot
+    restart: unless-stopped
+    environment:
+      - DISCORD_TOKEN=${DISCORD_TOKEN}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
+      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+      - BOT_PREFIX=${BOT_PREFIX:-!}
+      - SYNC_COMMANDS=${SYNC_COMMANDS:-true}
+      - DEBUG_MODE=${DEBUG_MODE:-false}
+    volumes:
+      - ./logs:/app/logs
+      - .:/app  # For development - mount local code
+    ports:
+      - "8000:8000"  # Health check port
+    networks:
+      - yamibot_network
+
+networks:
+  yamibot_network:
+    driver: bridge
+
+# For production, you might want to use this alternative service
+# that doesn't mount the local code volume:
+#
+#  yamibot-prod:
+#    build:
+#      context: .
+#      dockerfile: deployment/Dockerfile
+#    container_name: yamibot-prod
+#    restart: unless-stopped
+#    environment:
+#      - DISCORD_TOKEN=${DISCORD_TOKEN}
+#      - GROQ_API_KEY=${GROQ_API_KEY}
+#      - CEREBRAS_API_KEY=${CEREBRAS_API_KEY}
+#      - GOOGLE_AI_API_KEY=${GOOGLE_AI_API_KEY}
+#      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+#      - MISTRAL_API_KEY=${MISTRAL_API_KEY}
+#    volumes:
+#      - ./logs:/app/logs
+#    ports:
+#      - "8000:8000"
+#    networks:
+#      - yamibot_network
