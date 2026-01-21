@@ -45,11 +45,11 @@ class FallbackManager:
         self.last_used_provider: Optional[str] = None
         
         # Provider priority order (from highest to lowest)
+        # Updated order: Cerebras → SambaNova → Groq → Mistral
         self.provider_priority = [
+            "cerebras",
+            "sambanova",
             "groq",
-            "cerebras", 
-            "google",
-            "openrouter",
             "mistral"
         ]
     
@@ -61,19 +61,17 @@ class FallbackManager:
         
         # Import and initialize providers dynamically
         try:
-            # Import provider modules
-            from .providers.groq_provider import GroqProvider
+            # Import provider modules (updated provider order)
             from .providers.cerebras_provider import CerebrasProvider
-            from .providers.google_provider import GoogleProvider
-            from .providers.openrouter_provider import OpenRouterProvider
+            from .providers.sambanova_provider import SambanovaProvider
+            from .providers.groq_provider import GroqProvider
             from .providers.mistral_provider import MistralProvider
             
-            # Initialize providers in priority order
+            # Initialize providers in priority order: Cerebras → SambaNova → Groq → Mistral
             self.providers = [
-                GroqProvider(self.config),
                 CerebrasProvider(self.config),
-                GoogleProvider(self.config),
-                OpenRouterProvider(self.config),
+                SambanovaProvider(self.config),
+                GroqProvider(self.config),
                 MistralProvider(self.config)
             ]
             

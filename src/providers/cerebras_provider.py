@@ -1,7 +1,7 @@
 """
 Cerebras Provider for YamiBot
 
-Backup AI provider using the Cerebras API with llama-3.3-70b model.
+Primary AI provider using the Cerebras API with gpt-oss-120b model.
 """
 
 from typing import Tuple, Dict, Any
@@ -25,7 +25,7 @@ class CerebrasProvider(BaseProvider):
         self.session = None
     
     def _get_model_name(self) -> str:
-        return "llama-3.3-70b"
+        return "gpt-oss-120b"
     
     def _initialize_client(self) -> Any:
         """
@@ -84,15 +84,15 @@ class CerebrasProvider(BaseProvider):
         }
         
         try:
+            # Get conversation history if provided
+            messages = kwargs.get("messages", [
+                {"role": "user", "content": prompt}
+            ])
+            
             # Prepare payload
             payload = {
                 "model": self.model,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": prompt
-                    }
-                ],
+                "messages": messages,
                 "temperature": temperature,
                 "max_tokens": max_tokens
             }
