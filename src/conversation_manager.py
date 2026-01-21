@@ -9,8 +9,10 @@ from typing import Dict, List, Optional
 from datetime import datetime, timedelta
 from collections import defaultdict
 import asyncio
+import time
 
 from .utils.logger import setup_logging
+from .utils.logger import log_memory_status
 
 logger = setup_logging(__name__)
 
@@ -31,14 +33,19 @@ class ConversationManager:
         self.context_timeout = context_timeout
         
         # Store conversations by thread_id or channel_id
-        # Format: {conversation_id: {"messages": [...], "last_updated": datetime}}
+        # Format: {conversation_id: {"messages": [...], "last_updated": datetime, "created_at": datetime}}
         self.conversations: Dict[int, Dict] = defaultdict(lambda: {
             "messages": [],
-            "last_updated": datetime.utcnow()
+            "last_updated": datetime.utcnow(),
+            "created_at": datetime.utcnow()
         })
         
         # Track active conversations
         self.active_conversations: set = set()
+        
+        # Memory tracking
+        self.start_memory = log_memory_status()
+        self.last_memory_check = time.time()
         
         logger.info(f"Conversation manager initialized (max_history={max_history}, timeout={context_timeout}s)")
     
@@ -221,13 +228,61 @@ class ConversationManager:
             "context_timeout": self.context_timeout
         }
     
-    async def start_cleanup_task(self) -> None:
+    async def start_cleanup_task(self, cleanup_interval: int = 300) -> None:
         """
         Start a background task to periodically clean up expired conversations
+        
+        Args:
+            cleanup_interval: Time in seconds between cleanup runs (default: 5 minutes)
         """
         while True:
             try:
-                await asyncio.sleep(300)  # Run every 5 minutes
-                self._cleanup_expired_conversations()
+                await asyncio.sleep(cleanup_interval)
+                await self.cleanup_old_conversations()
+                await self._log_memory_status()
             except Exception as e:
                 logger.error(f"Error in cleanup task: {e}", exc_info=True)
+    
+    async def cleanup_old_conversations(self):
+        """Remove conversations older than timeout"""
+        now = time.time()
+        expired = []
+        
+        for conversation_id, conv_data in list(self.conversations.items()):
+            last_activity = conv_data["last_updated"]
+            if isinstance(last_activity, datetime):
+                last_activity_timestamp = last_activity.timestamp()
+            else:
+                last_activity_timestamp = last_activity
+            
+            if now - last_activity_timestamp > self.context_timeout:
+                expired.append(conversation_id)
+        
+        for conversation_id in expired:
+            del self.conversations[conversation_id]
+            self.active_conversations.discard(conversation_id)
+            logger.debug(f"Cleaned up conversation {conversation_id}")
+        
+        if expired:
+            logger.info(f"Cleaned up {len(expired)} expired conversations")
+    
+    async def _log_memory_status(self):
+        """Log memory status and check for memory leaks"""
+        current_time = time.time()
+        
+        # Log memory status every 10 minutes (600 seconds)
+        if current_time - self.last_memory_check >= 600:
+            memory_info = log_memory_status()
+            
+            # Check for significant memory growth
+            if self.start_memory and "rss_mb" in memory_info:
+                memory_growth = memory_info["rss_mb"] - self.start_memory["rss_mb"]
+                if memory_growth > 50:  # 50MB growth threshold
+                    logger.warning(f"Memory growth detected: {memory_growth:.2f}MB since startup")
+                    
+                    # Force aggressive cleanup if memory growth is extreme
+                    if memory_growth > 100:  # 100MB growth
+                        logger.warning("Performing aggressive cleanup due to high memory usage")
+                        await self.cleanup_old_conversations()
+            
+            self.last_memory_check = current_time

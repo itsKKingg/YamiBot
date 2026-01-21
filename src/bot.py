@@ -11,9 +11,14 @@ from discord.ext import commands
 import logging
 from typing import Optional
 import asyncio
+import signal
+import aiohttp
+import time
+from contextlib import asynccontextmanager
 
 from .utils.config import Config
 from .utils.logger import setup_logging
+from .utils.logger import log_memory_status
 from .fallback_manager import FallbackManager
 from .rate_limiter import RateLimiter
 from .conversation_manager import ConversationManager
@@ -54,23 +59,150 @@ class YamiBot(commands.Bot):
             context_timeout=config.conversation_timeout
         )
         
+        # Resource management
+        self.http_session: Optional[aiohttp.ClientSession] = None
+        self.health_server = None
+        self.shutdown_event = asyncio.Event()
+        self.cleanup_tasks = []
+        
         # Bot status tracking
         self.start_time = None
         self.last_provider_used = None
         self.messages_processed = 0
         
+        # Log initial memory status
+        self.start_memory = log_memory_status()
+        
+        logger.info("YamiBot instance created with resource management enabled")
+        
     async def setup_hook(self) -> None:
         """
         Setup hook called when the bot is ready to start
         """
-        logger.info("Setting up bot...")
+        logger.info("Setting up bot with resource management...")
         
         self.start_time = discord.utils.utcnow()
         
-        # Start conversation cleanup task
-        asyncio.create_task(self.conversation_manager.start_cleanup_task())
+        # Initialize shared HTTP session with connection pooling
+        await self._initialize_http_session()
         
-        logger.info("Bot setup complete")
+        # Setup signal handlers for graceful shutdown
+        await self._setup_signal_handlers()
+        
+        # Initialize fallback manager with shared session
+        await self._initialize_fallback_manager()
+        
+        # Start conversation cleanup task
+        cleanup_task = asyncio.create_task(
+            self.conversation_manager.start_cleanup_task(self.config.cleanup_interval)
+        )
+        self.cleanup_tasks.append(cleanup_task)
+        
+        # Start memory monitoring task
+        memory_task = asyncio.create_task(self._monitor_memory())
+        self.cleanup_tasks.append(memory_task)
+        
+        logger.info("Bot setup complete with resource management enabled")
+    
+    async def _initialize_http_session(self):
+        """Initialize shared aiohttp session with connection pooling"""
+        connector = aiohttp.TCPConnector(
+            limit=100,           # Total connections
+            limit_per_host=10,  # Per-host limit
+            ttl_dns_cache=300,   # DNS cache TTL
+            use_dns_cache=True,
+            keepalive_timeout=30,
+            enable_cleanup_closed=True
+        )
+        
+        timeout = aiohttp.ClientTimeout(total=30, connect=10)
+        
+        self.http_session = aiohttp.ClientSession(
+            connector=connector,
+            timeout=timeout,
+            headers={
+                "User-Agent": "YamiBot/1.0.0"
+            }
+        )
+        
+        logger.info("Shared HTTP session initialized with connection pooling")
+    
+    async def _setup_signal_handlers(self):
+        """Setup handlers for SIGTERM and SIGINT"""
+        loop = asyncio.get_event_loop()
+        
+        async def signal_handler(signum):
+            logger.info(f"Received signal {signum}, initiating graceful shutdown...")
+            await self._graceful_shutdown()
+        
+        try:
+            # Add signal handlers
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(signal_handler(s)))
+            logger.info("Signal handlers registered for graceful shutdown")
+        except (OSError, NotImplementedError):
+            # Signal handlers not available on Windows or in some environments
+            logger.warning("Signal handlers not available on this platform")
+    
+    async def _initialize_fallback_manager(self):
+        """Initialize fallback manager with shared session"""
+        # Set shared session for all providers
+        self.fallback_manager.set_shared_session(self.http_session)
+        await self.fallback_manager.initialize()
+        logger.info("Fallback manager initialized with shared session")
+    
+    async def _monitor_memory(self):
+        """Background task to monitor memory usage"""
+        while not self.shutdown_event.is_set():
+            try:
+                await asyncio.sleep(self.config.memory_check_interval)
+                
+                # Log current memory status
+                memory_info = log_memory_status()
+                
+                # Check for memory leaks
+                if self.start_memory and "rss_mb" in memory_info:
+                    memory_growth = memory_info["rss_mb"] - self.start_memory["rss_mb"]
+                    if memory_growth > 50:  # 50MB growth threshold
+                        logger.warning(f"Memory growth detected: {memory_growth:.2f}MB since startup")
+                        
+                        # Force cleanup if memory growth is extreme
+                        if memory_growth > 100:  # 100MB growth
+                            logger.warning("Performing emergency cleanup due to high memory usage")
+                            await self.conversation_manager.cleanup_old_conversations()
+                
+            except Exception as e:
+                logger.error(f"Error in memory monitoring: {e}", exc_info=True)
+    
+    async def _graceful_shutdown(self):
+        """Perform graceful shutdown of all resources"""
+        logger.info("Starting graceful shutdown...")
+        
+        # Set shutdown event to stop background tasks
+        self.shutdown_event.set()
+        
+        # Cancel cleanup tasks
+        for task in self.cleanup_tasks:
+            if not task.done():
+                task.cancel()
+        
+        # Wait for cleanup tasks to finish
+        if self.cleanup_tasks:
+            await asyncio.gather(*self.cleanup_tasks, return_exceptions=True)
+        
+        # Close HTTP session
+        if self.http_session:
+            await self.http_session.close()
+            logger.info("HTTP session closed")
+        
+        # Stop health check server
+        await stop_health_server()
+        logger.info("Health check server stopped")
+        
+        # Close Discord connection
+        await self.close()
+        
+        logger.info("Graceful shutdown complete")
     
     async def on_ready(self) -> None:
         """
@@ -87,10 +219,11 @@ class YamiBot(commands.Bot):
             )
         )
         
-        # Initialize fallback manager
-        await self.fallback_manager.initialize()
-        
         logger.info("Bot is ready and operational")
+        
+        # Log memory status on startup
+        memory_info = log_memory_status()
+        logger.info(f"Bot startup memory usage: {memory_info['rss_mb']}MB")
     
     async def on_message(self, message: discord.Message) -> None:
         """
@@ -201,11 +334,8 @@ class YamiBot(commands.Bot):
         """
         Cleanup when bot is shutting down
         """
-        logger.info("Shutting down bot...")
-        
-        # Stop health check server
-        await stop_health_server()
-        
+        logger.info("Bot close() called, performing cleanup...")
+        await self._graceful_shutdown()
         logger.info("Bot shutdown complete")
 
 def create_bot() -> YamiBot:
@@ -242,12 +372,12 @@ async def main():
         await bot.start(bot.config.discord_token)
         
     except KeyboardInterrupt:
-        logger.info("Received keyboard interrupt, shutting down...")
-        await bot.close()
+        logger.info("Received keyboard interrupt, initiating graceful shutdown...")
+        await bot._graceful_shutdown()
         
     except Exception as e:
         logger.error(f"Bot crashed: {e}", exc_info=True)
-        await bot.close()
+        await bot._graceful_shutdown()
         raise
 
 if __name__ == "__main__":

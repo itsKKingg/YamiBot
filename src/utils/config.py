@@ -40,6 +40,18 @@ class Config:
         self.max_conversation_history = int(self._get_env("MAX_CONVERSATION_HISTORY", default="10"))
         self.conversation_timeout = int(self._get_env("CONVERSATION_TIMEOUT", default="3600"))
         
+        # Resource management settings
+        self.cleanup_interval = int(self._get_env("CLEANUP_INTERVAL", default="300"))  # 5 minutes
+        self.memory_check_interval = int(self._get_env("MEMORY_CHECK_INTERVAL", default="600"))  # 10 minutes
+        
+        # Provider timeout configuration (seconds)
+        self.provider_timeouts = {
+            'cerebras': int(self._get_env("CEREBRAS_TIMEOUT", default="120")),      # 2 minutes
+            'sambanova': int(self._get_env("SAMBANOVA_TIMEOUT", default="120")),    # 2 minutes
+            'groq': int(self._get_env("GROQ_TIMEOUT", default="90")),              # 90 seconds
+            'mistral': int(self._get_env("MISTRAL_TIMEOUT", default="60"))          # 60 seconds
+        }
+        
         # Validate required configuration
         self._validate_config()
         
@@ -117,6 +129,9 @@ class Config:
             "debug_mode": self.debug_mode,
             "max_conversation_history": self.max_conversation_history,
             "conversation_timeout": self.conversation_timeout,
+            "cleanup_interval": self.cleanup_interval,
+            "memory_check_interval": self.memory_check_interval,
+            "provider_timeouts": self.provider_timeouts,
             "api_keys_configured": {
                 "discord": bool(self.discord_token),
                 "cerebras": bool(self.cerebras_api_key),
