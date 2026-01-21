@@ -1,327 +1,337 @@
-# YamiBot - AI Discord Bot with Multi-Provider Fallback
+# 🤖 YamiBot - AI Discord Agent
 
-![YamiBot Logo](https://via.placeholder.com/150?text=YamiBot)
+A production-ready AI Discord bot that responds naturally to @mentions with intelligent conversation. Features multi-provider API fallback, conversation context management, and cloud deployment support.
 
-YamiBot is a production-ready AI Discord bot that leverages multiple AI providers with automatic fallback capability. When the primary provider is rate-limited or unavailable, YamiBot automatically falls back to the next available provider in the priority chain.
+## ✨ Features
 
-## Features
+### Core Functionality
+- 🗣️ **Natural Conversation**: No slash commands - just @mention the bot
+- 🧠 **Context Aware**: Maintains conversation history within threads
+- 🔄 **Multi-Provider Fallback**: Automatic failover across 4 AI providers
+- ⚡ **Fast Response**: Typing indicator while processing
+- 🧵 **Thread Support**: Reply in threads for organized conversations
+- 📊 **Smart Rate Limiting**: Prevents hitting API limits
+- 🚀 **Cloud Ready**: Deploy to Koyeb, Railway, or any Docker platform
 
-✅ **Multi-Provider AI Access** - 5 different AI providers with automatic fallback
-✅ **Smart Rate Limiting** - Tracks and respects each provider's quotas
-✅ **Caching System** - Reduces duplicate API calls and improves response times
-✅ **Comprehensive Logging** - Detailed logs for debugging and monitoring
-✅ **Docker Support** - Easy containerization for deployment
-✅ **Koyeb Cloud Ready** - Optimized for serverless deployment
-✅ **Discord Slash Commands** - Modern Discord command interface
+### AI Providers (Priority Order)
+1. **Cerebras** (Primary) - `gpt-oss-120b`
+2. **SambaNova** (Backup) - `gpt-oss-120b`
+3. **Groq** (Fallback) - `openai/gpt-oss-120b`
+4. **Mistral** (Safety) - `mistral-small-latest`
 
-## AI Providers (in fallback order)
-
-1. **Groq (Primary)** - `llama-3.1-8b` - 14,400 requests/day
-2. **Cerebras (Backup 1)** - `llama-3.3-70b` - 14,400 requests/day
-3. **Google (Backup 2)** - `gemini-1.5-flash` - 1,000 requests/day
-4. **OpenRouter (Backup 3)** - Flexible model routing
-5. **Mistral (Final)** - `mistral-small` - 1 request/second limit
-
-## Quick Start
+## 🚀 Quick Start
 
 ### Prerequisites
+- Python 3.9 or higher
+- Discord Bot Token ([Get one here](https://discord.com/developers/applications))
+- API keys for AI providers (see [Getting API Keys](#getting-api-keys))
 
-- Python 3.11+
-- Docker (for containerized deployment)
-- Discord Bot Token
-- API keys for all providers
+### Local Development
 
-### Installation
-
+1. **Clone the repository**
 ```bash
-# Clone the repository
-git clone https://github.com/your-username/YamiBot.git
-cd YamiBot
+git clone https://github.com/yourusername/yamibot.git
+cd yamibot
+```
 
-# Copy environment file
-cp .env.example .env
-
-# Edit .env and add your API keys
-nano .env
-
-# Install dependencies
+2. **Install dependencies**
+```bash
 pip install -r requirements.txt
 ```
 
-### Running Locally
-
+3. **Configure environment**
 ```bash
-# Start the bot
-python -m src.bot
+cp .env.example .env
+# Edit .env with your API keys
+```
 
-# Or use the main entry point
+4. **Run the bot**
+```bash
+python -m src.bot
+# or
 python main.py
 ```
 
-### Running with Docker
+### Docker Setup
 
+1. **Build the image**
 ```bash
-# Build the Docker image
-docker-compose -f deployment/docker-compose.yml build
-
-# Start the bot
-docker-compose -f deployment/docker-compose.yml up
+cd deployment
+docker-compose up --build
 ```
 
-## Discord Commands
-
-### `/ask <question>`
-Ask the AI a question. The bot will automatically use the best available provider.
-
-**Example:**
-```
-/ask What is the capital of France?
+2. **Or use Docker directly**
+```bash
+docker build -f deployment/Dockerfile -t yamibot .
+docker run --env-file .env yamibot
 ```
 
-### `/status`
-Check the current status of all AI providers, including:
-- Provider availability
-- Rate limit status
-- Remaining quotas
-- Last used provider
+## 🔑 Getting API Keys
 
-**Example:**
+### Discord Bot Token
+1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
+2. Create a new application
+3. Go to "Bot" section and create a bot
+4. Copy the token
+5. Enable "Message Content Intent" under Privileged Gateway Intents
+
+### Cerebras API Key
+1. Sign up at [Cerebras AI](https://cerebras.ai/)
+2. Navigate to API section
+3. Generate a new API key
+
+### SambaNova API Key
+1. Sign up at [SambaNova AI](https://sambanova.ai/)
+2. Access your dashboard
+3. Create an API key
+
+### Groq API Key
+1. Sign up at [Groq Console](https://console.groq.com/)
+2. Go to API Keys section
+3. Create a new API key
+
+### Mistral API Key
+1. Sign up at [Mistral AI Console](https://console.mistral.ai/)
+2. Navigate to API keys
+3. Generate a new key
+
+## 💬 Using the Bot
+
+### Basic Usage
+
+Simply @mention the bot in any channel or DM:
+
 ```
-/status
+@YamiBot What is the capital of France?
+@YamiBot Can you explain quantum computing?
+@YamiBot Write me a poem about coding
 ```
 
-### `/providers`
-List all available AI providers with their models and limits.
+### Thread Conversations
 
-**Example:**
+The bot maintains context within threads:
+
 ```
-/providers
+User: @YamiBot What is Python?
+Bot: Python is a high-level programming language...
+
+User: What can I build with it?  [in thread]
+Bot: With Python, you can build... [remembers context]
 ```
 
-## Project Structure
+### Conversation Context
+
+- Bot remembers the last 10 messages in each conversation
+- Context expires after 1 hour of inactivity
+- Each thread/channel has separate context
+- Context resets automatically on timeout
+
+## 📁 Project Structure
 
 ```
 YamiBot/
 ├── src/
-│   ├── bot.py                  # Main bot entry point
-│   ├── fallback_manager.py     # Provider fallback orchestration
-│   ├── rate_limiter.py         # Rate limit tracking
-│   ├── providers/              # AI provider implementations
-│   ├── commands/               # Discord command handlers
-│   └── utils/                  # Utility modules
-├── deployment/                # Deployment configuration
-├── .github/workflows/         # CI/CD pipelines
-├── requirements.txt           # Python dependencies
-├── .env.example               # Environment configuration template
-└── README.md                  # This file
+│   ├── __init__.py
+│   ├── bot.py                      # Main Discord bot with @mention handling
+│   ├── fallback_manager.py        # Provider fallback orchestration
+│   ├── rate_limiter.py             # Rate limit tracking
+│   ├── conversation_manager.py    # Conversation context management
+│   ├── providers/
+│   │   ├── __init__.py
+│   │   ├── base.py                # Abstract provider class
+│   │   ├── cerebras_provider.py   # Cerebras AI implementation
+│   │   ├── sambanova_provider.py  # SambaNova AI implementation
+│   │   ├── groq_provider.py       # Groq AI implementation
+│   │   └── mistral_provider.py    # Mistral AI implementation
+│   └── utils/
+│       ├── __init__.py
+│       ├── logger.py              # Logging configuration
+│       ├── cache.py               # Caching system
+│       └── config.py              # Environment configuration
+├── deployment/
+│   ├── Dockerfile                 # Production Docker image
+│   ├── docker-compose.yml         # Local development setup
+│   ├── .dockerignore
+│   └── koyeb-deploy.md           # Koyeb deployment guide
+├── .github/workflows/
+│   └── deploy.yml                # CI/CD pipeline
+├── .env.example                  # Environment template
+├── requirements.txt              # Python dependencies
+├── README.md                     # This file
+├── IMPROVEMENTS.md               # Phase 2 enhancement suggestions
+└── .gitignore
 ```
 
-## Configuration
+## ⚙️ Configuration
 
 ### Environment Variables
 
-Copy `.env.example` to `.env` and fill in your API keys:
+| Variable | Required | Description | Default |
+|----------|----------|-------------|---------|
+| `DISCORD_TOKEN` | Yes | Discord bot token | - |
+| `CEREBRAS_API_KEY` | Yes | Cerebras API key | - |
+| `SAMBANOVA_API_KEY` | Yes | SambaNova API key | - |
+| `GROQ_API_KEY` | Yes | Groq API key | - |
+| `MISTRAL_API_KEY` | Yes | Mistral API key | - |
+| `BOT_PREFIX` | No | Command prefix (not used in MVP) | `!` |
+| `SYNC_COMMANDS` | No | Sync slash commands (not used) | `false` |
+| `DEBUG_MODE` | No | Enable debug logging | `false` |
+| `MAX_CONVERSATION_HISTORY` | No | Max messages to remember | `10` |
+| `CONVERSATION_TIMEOUT` | No | Context timeout (seconds) | `3600` |
 
-```env
-# Required API Keys
-DISCORD_TOKEN=your_discord_bot_token
-GROQ_API_KEY=your_groq_api_key
-CEREBRAS_API_KEY=your_cerebras_api_key
-GOOGLE_AI_API_KEY=your_google_ai_api_key
-OPENROUTER_API_KEY=your_openrouter_api_key
-MISTRAL_API_KEY=your_mistral_api_key
+### Conversation Settings
 
-# Optional Settings
-BOT_PREFIX=!
-SYNC_COMMANDS=true
-DEBUG_MODE=false
-```
+**MAX_CONVERSATION_HISTORY**: Controls how many messages are kept in context
+- Minimum: 2 (current exchange only)
+- Maximum: 50 (may hit token limits)
+- Recommended: 10-20 for good context without token bloat
 
-### Getting API Keys
+**CONVERSATION_TIMEOUT**: How long before context expires
+- Minimum: 300 (5 minutes)
+- Maximum: 86400 (24 hours)
+- Recommended: 3600 (1 hour) for active conversations
 
-1. **Discord Token**: [Discord Developer Portal](https://discord.com/developers/applications)
-2. **Groq API Key**: [Groq Console](https://console.groq.com/keys)
-3. **Cerebras API Key**: [Cerebras AI](https://www.cerebras.ai/api-keys)
-4. **Google AI Key**: [Google AI Studio](https://makersuite.google.com/app/apikey)
-5. **OpenRouter Key**: [OpenRouter](https://openrouter.ai/keys)
-6. **Mistral API Key**: [Mistral Console](https://console.mistral.ai/api-keys)
+## 🚢 Deployment
 
-## Deployment
+### Deploy to Koyeb (Recommended)
 
-### Koyeb Cloud Deployment
+See [deployment/koyeb-deploy.md](deployment/koyeb-deploy.md) for detailed instructions.
 
-YamiBot is optimized for deployment on [Koyeb](https://www.koyeb.com/), a serverless platform:
+**Quick steps**:
+1. Fork this repository
+2. Sign up at [Koyeb](https://www.koyeb.com/)
+3. Create a new app from your fork
+4. Add environment variables
+5. Deploy!
 
-1. **Follow the deployment guide**: [deployment/koyeb-deploy.md](deployment/koyeb-deploy.md)
-2. **Set up environment variables** in Koyeb dashboard
-3. **Deploy and monitor** your bot
+### Deploy to Railway
 
-### Other Deployment Options
+1. Click the button:
+   [![Deploy on Railway](https://railway.app/button.svg)](https://railway.app/new)
 
-- **Heroku**: Use the Dockerfile with Heroku container support
-- **AWS ECS**: Deploy the Docker container to ECS
-- **Google Cloud Run**: Deploy the container to Cloud Run
-- **Self-hosted**: Run on any server with Docker support
+2. Add environment variables
+3. Deploy
 
-## Development
+### Deploy to Other Platforms
 
-### Setting Up Development Environment
+YamiBot works on any platform that supports Docker:
+- Heroku
+- DigitalOcean App Platform
+- Google Cloud Run
+- AWS ECS
+- Azure Container Instances
 
-```bash
-# Create virtual environment
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate  # Windows
-
-# Install development dependencies
-pip install -r requirements.txt
-# pip install black isort mypy pytest  # For development tools
-```
-
-### Running Tests
-
-```bash
-# Run tests (when implemented)
-pytest tests/
-
-# Run linter
-black src/
-isort src/
-
-# Run type checker
-mypy src/
-```
-
-### Adding New Providers
-
-To add a new AI provider:
-
-1. Create a new file in `src/providers/` following the pattern
-2. Implement the `BaseProvider` interface
-3. Add the provider to the priority list in `fallback_manager.py`
-4. Update the rate limiter with the provider's limits
-5. Add the provider to the status and providers commands
-
-## Architecture
-
-### Fallback System
-
-```mermaid
-graph TD
-    A[User Query] --> B[Groq Provider]
-    B -->|Success| G[Return Response]
-    B -->|Rate Limited| C[Cerebras Provider]
-    C -->|Success| G
-    C -->|Rate Limited| D[Google Provider]
-    D -->|Success| G
-    D -->|Rate Limited| E[OpenRouter Provider]
-    E -->|Success| G
-    E -->|Rate Limited| F[Mistral Provider]
-    F -->|Success| G
-    F -->|All Failed| H[Error Response]
-```
-
-### Rate Limiting
-
-The bot tracks usage for each provider:
-- **Groq**: 14,400 requests/day
-- **Cerebras**: 14,400 requests/day  
-- **Google**: 1,000 requests/day
-- **Mistral**: 1 request/second
-
-### Caching
-
-- **TTL-based caching**: Responses cached for 1 hour
-- **LRU eviction**: Least recently used items removed when cache is full
-- **Cache hits/misses**: Tracked for performance monitoring
-
-## Monitoring and Logging
+## 📊 Monitoring
 
 ### Logs
 
-Logs are stored in the `logs/` directory with the format:
-- `yamibot_YYYY-MM-DD.log` - Daily log files
-- Console output with color coding
+View logs in real-time:
+```bash
+docker logs -f yamibot
+```
 
-### Log Levels
+Logs include:
+- All @mention events
+- Provider fallback decisions
+- API call timing and token usage
+- Error details with context
+- Conversation context updates
 
-- **INFO**: General operational messages
-- **WARNING**: Potential issues or rate limit warnings
-- **ERROR**: Failed API calls or command errors
-- **DEBUG**: Detailed debugging information (when DEBUG_MODE=true)
+### Health Check
 
-## Troubleshooting
+The bot exposes a health endpoint on port 8080:
+```bash
+curl http://localhost:8080/health
+```
 
-### Common Issues
+## 🔧 Troubleshooting
 
-**Bot doesn't start:**
-- Check that all API keys are correctly configured
-- Verify your Discord token is valid
-- Check the logs for specific error messages
+### Bot Not Responding
 
-**All providers unavailable:**
-- Check that you haven't exceeded rate limits
-- Verify all API keys are correct
-- Test each provider individually
+1. **Check bot is online**: Look for green status in Discord
+2. **Verify intents**: Ensure "Message Content Intent" is enabled
+3. **Check mentions**: Bot only responds to @mentions
+4. **Review logs**: Check for API errors or rate limits
 
-**Slow responses:**
-- Check network connectivity
-- Verify provider API status
-- Consider enabling caching
+### All Providers Failing
 
-**Command errors:**
-- Ensure bot has proper permissions in your server
-- Check that commands are synced (`SYNC_COMMANDS=true`)
-- Verify bot intents are configured correctly
+1. **Check API keys**: Ensure all keys are valid
+2. **Verify network**: Ensure bot can reach provider APIs
+3. **Check rate limits**: May have exceeded free tier
+4. **Review provider status**: Check provider status pages
 
-## Contributing
+### Context Not Working
 
-Contributions are welcome! Please follow these guidelines:
+1. **Check timeout**: Context expires after 1 hour by default
+2. **Verify thread ID**: Each thread has separate context
+3. **Look for errors**: Check logs for context manager errors
 
-1. **Fork the repository**
-2. **Create a feature branch**: `git checkout -b feature/your-feature`
-3. **Commit your changes**: `git commit -m 'Add some feature'`
-4. **Push to the branch**: `git push origin feature/your-feature`
-5. **Open a pull request**
+### High API Usage
 
-### Code Style
+1. **Check for spam**: May have users spamming bot
+2. **Review history size**: Reduce MAX_CONVERSATION_HISTORY
+3. **Implement caching**: See IMPROVEMENTS.md for caching suggestions
+4. **Add rate limits**: Implement per-user rate limiting
 
-- Follow PEP 8 guidelines
-- Use type hints
-- Write docstrings for all public methods
-- Keep functions small and focused
+## 🔐 Security Best Practices
 
-## License
+- ✅ Never commit `.env` file
+- ✅ Rotate API keys regularly
+- ✅ Use least-privilege Discord permissions
+- ✅ Enable rate limiting in production
+- ✅ Monitor for abuse
+- ✅ Keep dependencies updated
 
-This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
+## 📈 Performance Tips
 
-## Support
+- Use Redis for caching (future enhancement)
+- Enable response caching for common questions
+- Adjust MAX_CONVERSATION_HISTORY based on usage
+- Monitor token usage per provider
+- Use health checks to detect slow providers
 
-For issues, questions, or feature requests:
-- Open an issue on GitHub
-- Check the documentation
-- Review the logs for error details
+## 🎨 Future Enhancements
 
-## Roadmap
+See [IMPROVEMENTS.md](IMPROVEMENTS.md) for 30+ enhancement ideas including:
 
-Future enhancements planned:
-- ✅ Multi-provider fallback system
-- ✅ Rate limiting and quota tracking
-- ✅ Docker containerization
-- ✅ Koyeb deployment support
-- 🚀 Advanced caching strategies
-- 🚀 Provider health monitoring
-- 🚀 Custom provider selection
-- 🚀 Response quality scoring
-- 🚀 Multi-language support
+- 🎭 Reaction-based controls (👍🔄❌)
+- 🌍 Multi-language support
+- 💾 Database integration
+- 📊 Usage analytics
+- 🖼️ Image generation
+- 🔍 Web search integration
+- 🎤 Voice channel support
+- And much more!
 
-## Acknowledgements
+## 🤝 Contributing
 
-- Discord.py for the excellent Discord bot framework
-- All AI providers for their powerful APIs
-- Koyeb for the serverless deployment platform
-- Open source community for inspiration and support
+Contributions are welcome! Please:
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## 📝 License
+
+This project is licensed under the MIT License - see the LICENSE file for details.
+
+## 🙏 Acknowledgments
+
+- [discord.py](https://github.com/Rapptz/discord.py) - Discord API wrapper
+- [Groq](https://groq.com/) - Fast AI inference
+- [Cerebras](https://cerebras.ai/) - AI model provider
+- [SambaNova](https://sambanova.ai/) - AI model provider
+- [Mistral AI](https://mistral.ai/) - AI model provider
+- [Koyeb](https://www.koyeb.com/) - Cloud deployment platform
+
+## 📧 Support
+
+- **Issues**: [GitHub Issues](https://github.com/yourusername/yamibot/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/yourusername/yamibot/discussions)
+- **Email**: your-email@example.com
 
 ---
 
-**YamiBot** - Your intelligent Discord companion with reliable AI access! 🤖💬
+Made with ❤️ by [Your Name]

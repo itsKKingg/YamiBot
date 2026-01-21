@@ -26,16 +26,19 @@ class Config:
         
         # Load all configuration values
         self.discord_token = self._get_env("DISCORD_TOKEN")
-        self.groq_api_key = self._get_env("GROQ_API_KEY")
         self.cerebras_api_key = self._get_env("CEREBRAS_API_KEY")
-        self.google_ai_api_key = self._get_env("GOOGLE_AI_API_KEY")
-        self.openrouter_api_key = self._get_env("OPENROUTER_API_KEY")
+        self.sambanova_api_key = self._get_env("SAMBANOVA_API_KEY")
+        self.groq_api_key = self._get_env("GROQ_API_KEY")
         self.mistral_api_key = self._get_env("MISTRAL_API_KEY")
         
         # Bot configuration
         self.bot_prefix = self._get_env("BOT_PREFIX", default="!")
-        self.sync_commands = self._get_env("SYNC_COMMANDS", default="true").lower() == "true"
+        self.sync_commands = self._get_env("SYNC_COMMANDS", default="false").lower() == "true"
         self.debug_mode = self._get_env("DEBUG_MODE", default="false").lower() == "true"
+        
+        # Conversation settings
+        self.max_conversation_history = int(self._get_env("MAX_CONVERSATION_HISTORY", default="10"))
+        self.conversation_timeout = int(self._get_env("CONVERSATION_TIMEOUT", default="3600"))
         
         # Validate required configuration
         self._validate_config()
@@ -64,10 +67,9 @@ class Config:
         """
         required_vars = {
             "DISCORD_TOKEN": self.discord_token,
-            "GROQ_API_KEY": self.groq_api_key,
             "CEREBRAS_API_KEY": self.cerebras_api_key,
-            "GOOGLE_AI_API_KEY": self.google_ai_api_key,
-            "OPENROUTER_API_KEY": self.openrouter_api_key,
+            "SAMBANOVA_API_KEY": self.sambanova_api_key,
+            "GROQ_API_KEY": self.groq_api_key,
             "MISTRAL_API_KEY": self.mistral_api_key
         }
         
@@ -94,12 +96,13 @@ class Config:
             "bot_prefix": self.bot_prefix,
             "sync_commands": self.sync_commands,
             "debug_mode": self.debug_mode,
+            "max_conversation_history": self.max_conversation_history,
+            "conversation_timeout": self.conversation_timeout,
             "api_keys_configured": {
                 "discord": bool(self.discord_token),
-                "groq": bool(self.groq_api_key),
                 "cerebras": bool(self.cerebras_api_key),
-                "google": bool(self.google_ai_api_key),
-                "openrouter": bool(self.openrouter_api_key),
+                "sambanova": bool(self.sambanova_api_key),
+                "groq": bool(self.groq_api_key),
                 "mistral": bool(self.mistral_api_key)
             }
         }

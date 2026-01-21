@@ -18,6 +18,7 @@ def test_imports():
         from src.bot import YamiBot, create_bot
         from src.fallback_manager import FallbackManager
         from src.rate_limiter import RateLimiter
+        from src.conversation_manager import ConversationManager
         from src.utils.config import Config
         from src.utils.logger import setup_logging
         from src.utils.cache import cache
@@ -26,25 +27,19 @@ def test_imports():
         
         # Test provider imports
         from src.providers.base import BaseProvider
-        from src.providers.groq_provider import GroqProvider
         from src.providers.cerebras_provider import CerebrasProvider
-        from src.providers.google_provider import GoogleProvider
-        from src.providers.openrouter_provider import OpenRouterProvider
+        from src.providers.sambanova_provider import SambanovaProvider
+        from src.providers.groq_provider import GroqProvider
         from src.providers.mistral_provider import MistralProvider
         
         print("✅ Provider imports successful")
-        
-        # Test command imports
-        from src.commands.ask import AskCommand
-        from src.commands.status import StatusCommand
-        from src.commands.providers import ProvidersCommand
-        
-        print("✅ Command imports successful")
         
         return True
         
     except Exception as e:
         print(f"❌ Import failed: {e}")
+        import traceback
+        traceback.print_exc()
         return False
 
 def test_config():
@@ -118,6 +113,36 @@ def test_rate_limiter():
         print(f"❌ Rate limiter test failed: {e}")
         return False
 
+def test_conversation_manager():
+    """Test conversation manager functionality"""
+    print("\nTesting conversation manager...")
+    
+    try:
+        from src.conversation_manager import ConversationManager
+        
+        manager = ConversationManager(max_history=5, context_timeout=60)
+        
+        # Test adding messages
+        manager.add_message(channel_id=123, role="user", content="Hello")
+        manager.add_message(channel_id=123, role="assistant", content="Hi there!")
+        
+        # Test getting history
+        history = manager.get_conversation_history(channel_id=123)
+        
+        if len(history) == 2 and history[0]["content"] == "Hello":
+            print("✅ Conversation manager working correctly")
+            manager.clear_conversation(channel_id=123)
+            return True
+        else:
+            print("❌ Conversation manager test failed")
+            return False
+            
+    except Exception as e:
+        print(f"❌ Conversation manager test failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
 def main():
     """Run all tests"""
     print("🧪 Running YamiBot basic tests...\n")
@@ -126,7 +151,8 @@ def main():
         test_imports,
         test_config,
         test_cache,
-        test_rate_limiter
+        test_rate_limiter,
+        test_conversation_manager
     ]
     
     passed = 0

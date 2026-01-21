@@ -1,7 +1,7 @@
 """
 Mistral Provider for YamiBot
 
-Final fallback AI provider using the Mistral API with mistral-small model.
+Safety fallback AI provider using the Mistral API with mistral-small-latest model.
 """
 
 from typing import Tuple, Dict, Any
@@ -31,7 +31,7 @@ class MistralProvider(BaseProvider):
         self.last_request_time = 0  # For RPS tracking
     
     def _get_model_name(self) -> str:
-        return "mistral-small"
+        return "mistral-small-latest"
     
     def _initialize_client(self) -> Any:
         """
@@ -99,8 +99,13 @@ class MistralProvider(BaseProvider):
         }
         
         try:
-            # Create chat messages
-            messages = [ChatMessage(role="user", content=prompt)]
+            # Get conversation history if provided
+            message_list = kwargs.get("messages", [
+                {"role": "user", "content": prompt}
+            ])
+            
+            # Convert to Mistral ChatMessage format
+            messages = [ChatMessage(role=msg["role"], content=msg["content"]) for msg in message_list]
             
             # Make the API call
             response = await self._with_timeout(

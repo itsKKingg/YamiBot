@@ -1,8 +1,8 @@
 """
 Main Discord bot entry point for YamiBot
 
-This module initializes the Discord bot, loads all commands, and handles
-bot lifecycle events including startup, shutdown, and error handling.
+This module initializes the Discord bot with natural conversation via @mentions.
+The bot responds to messages that mention it and maintains conversation context within threads.
 """
 
 import os
@@ -10,11 +10,13 @@ import discord
 from discord.ext import commands
 import logging
 from typing import Optional
+import asyncio
 
 from .utils.config import Config
 from .utils.logger import setup_logging
 from .fallback_manager import FallbackManager
 from .rate_limiter import RateLimiter
+from .conversation_manager import ConversationManager
 
 # Setup logging
 logger = setup_logging(__name__)
@@ -22,7 +24,7 @@ logger = setup_logging(__name__)
 class YamiBot(commands.Bot):
     """
     Custom Discord bot class that extends commands.Bot
-    with additional functionality for YamiBot
+    with AI conversation capabilities via @mentions
     """
     
     def __init__(self, config: Config):
@@ -35,9 +37,10 @@ class YamiBot(commands.Bot):
         intents = discord.Intents.default()
         intents.message_content = True
         intents.guilds = True
+        intents.members = True
         
         super().__init__(
-            command_prefix=commands.when_mentioned_or(config.bot_prefix),
+            command_prefix=commands.when_mentioned,
             intents=intents,
             help_command=None
         )
@@ -45,49 +48,28 @@ class YamiBot(commands.Bot):
         self.config = config
         self.fallback_manager = FallbackManager(config)
         self.rate_limiter = RateLimiter()
+        self.conversation_manager = ConversationManager(
+            max_history=config.max_conversation_history,
+            context_timeout=config.conversation_timeout
+        )
         
         # Bot status tracking
         self.start_time = None
         self.last_provider_used = None
+        self.messages_processed = 0
         
     async def setup_hook(self) -> None:
         """
         Setup hook called when the bot is ready to start
-        Loads all commands and syncs application commands
         """
-        logger.info("Setting up bot commands...")
-        
-        # Load all command modules
-        await self.load_commands()
-        
-        # Sync application commands
-        if self.config.sync_commands:
-            await self.tree.sync()
-            logger.info("Synced application commands")
+        logger.info("Setting up bot...")
         
         self.start_time = discord.utils.utcnow()
+        
+        # Start conversation cleanup task
+        asyncio.create_task(self.conversation_manager.start_cleanup_task())
+        
         logger.info("Bot setup complete")
-    
-    async def load_commands(self) -> None:
-        """
-        Load all command modules from the commands directory
-        """
-        try:
-            # Import and register command modules
-            from .commands.ask import AskCommand
-            from .commands.status import StatusCommand
-            from .commands.providers import ProvidersCommand
-            
-            # Add command cog instances
-            await self.add_cog(AskCommand(self))
-            await self.add_cog(StatusCommand(self))
-            await self.add_cog(ProvidersCommand(self))
-            
-            logger.info("Successfully loaded all commands")
-            
-        except Exception as e:
-            logger.error(f"Failed to load commands: {e}", exc_info=True)
-            raise
     
     async def on_ready(self) -> None:
         """
@@ -99,8 +81,8 @@ class YamiBot(commands.Bot):
         # Set bot presence
         await self.change_presence(
             activity=discord.Activity(
-                type=discord.ActivityType.watching,
-                name=f"/ask | {self.config.bot_prefix}help"
+                type=discord.ActivityType.listening,
+                name="@mentions | AI conversation bot"
             )
         )
         
@@ -109,19 +91,110 @@ class YamiBot(commands.Bot):
         
         logger.info("Bot is ready and operational")
     
-    async def on_command_error(self, ctx: commands.Context, error: commands.CommandError) -> None:
+    async def on_message(self, message: discord.Message) -> None:
         """
-        Global error handler for command errors
+        Event handler for all messages
+        Handles @mentions and natural conversation
         """
-        if isinstance(error, commands.CommandNotFound):
-            return  # Ignore unknown commands
-            
-        if isinstance(error, commands.MissingRequiredArgument):
-            await ctx.send(f"❌ Missing required argument: {error.param.name}")
+        # Ignore messages from the bot itself
+        if message.author == self.user:
             return
-            
-        logger.error(f"Command error in {ctx.command}: {error}", exc_info=True)
-        await ctx.send("❌ An error occurred while processing your command. Please try again later.")
+        
+        # Ignore messages from other bots (optional)
+        if message.author.bot:
+            return
+        
+        # Check if bot is mentioned
+        if self.user not in message.mentions:
+            return
+        
+        # Get thread ID if message is in a thread
+        thread_id = None
+        if isinstance(message.channel, discord.Thread):
+            thread_id = message.channel.id
+        
+        try:
+            # Show typing indicator
+            async with message.channel.typing():
+                # Extract the actual message content (remove bot mention)
+                content = message.content
+                for mention in message.mentions:
+                    content = content.replace(f'<@{mention.id}>', '').replace(f'<@!{mention.id}>', '')
+                content = content.strip()
+                
+                if not content:
+                    await message.reply("Hey! You mentioned me but didn't say anything. How can I help you?")
+                    return
+                
+                logger.info(f"Processing message from {message.author} in {message.channel}: {content[:100]}")
+                
+                # Add user message to conversation history
+                self.conversation_manager.add_message(
+                    channel_id=message.channel.id,
+                    role="user",
+                    content=content,
+                    thread_id=thread_id
+                )
+                
+                # Get conversation history for context
+                conversation_history = self.conversation_manager.get_conversation_history(
+                    channel_id=message.channel.id,
+                    thread_id=thread_id
+                )
+                
+                # Query AI with conversation context
+                response_text, metadata = await self.fallback_manager.query(
+                    prompt=content,
+                    messages=conversation_history
+                )
+                
+                if response_text:
+                    # Add assistant response to conversation history
+                    self.conversation_manager.add_message(
+                        channel_id=message.channel.id,
+                        role="assistant",
+                        content=response_text,
+                        thread_id=thread_id
+                    )
+                    
+                    # Track which provider was used
+                    self.last_provider_used = metadata.get("provider", "unknown")
+                    self.messages_processed += 1
+                    
+                    # Split long responses if needed (Discord has 2000 char limit)
+                    if len(response_text) > 2000:
+                        # Split into chunks
+                        chunks = [response_text[i:i+2000] for i in range(0, len(response_text), 2000)]
+                        for i, chunk in enumerate(chunks):
+                            if i == 0:
+                                await message.reply(chunk)
+                            else:
+                                await message.channel.send(chunk)
+                    else:
+                        # Reply in thread
+                        await message.reply(response_text)
+                    
+                    # Log metadata
+                    logger.info(
+                        f"Response sent via {metadata.get('provider')} "
+                        f"({metadata.get('total_tokens', 0)} tokens, "
+                        f"{metadata.get('response_time', 0):.2f}s)"
+                    )
+                else:
+                    # All providers failed
+                    error_msg = "😔 Sorry, I'm having trouble connecting to my AI services right now. Please try again in a moment."
+                    await message.reply(error_msg)
+                    logger.error(f"All providers failed: {metadata.get('error')}")
+        
+        except Exception as e:
+            logger.error(f"Error processing message: {e}", exc_info=True)
+            await message.reply("❌ An error occurred while processing your message. Please try again.")
+    
+    async def on_error(self, event: str, *args, **kwargs) -> None:
+        """
+        Global error handler for bot events
+        """
+        logger.error(f"Error in event {event}", exc_info=True)
     
     async def close(self) -> None:
         """

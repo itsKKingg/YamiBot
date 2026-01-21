@@ -1,7 +1,7 @@
 """
 Groq Provider for YamiBot
 
-Primary AI provider using the Groq API with llama-3.1-8b model.
+Fallback AI provider using the Groq API with openai/gpt-oss-120b model.
 """
 
 from typing import Tuple, Dict, Any
@@ -26,7 +26,7 @@ class GroqProvider(BaseProvider):
     """
     
     def _get_model_name(self) -> str:
-        return "llama-3.1-8b"
+        return "openai/gpt-oss-120b"
     
     def _initialize_client(self) -> Any:
         """
@@ -82,13 +82,10 @@ class GroqProvider(BaseProvider):
         }
         
         try:
-            # Prepare messages for Groq API
-            messages = [
-                {
-                    "role": "user",
-                    "content": prompt
-                }
-            ]
+            # Get conversation history if provided
+            messages = kwargs.get("messages", [
+                {"role": "user", "content": prompt}
+            ])
             
             # Make the API call
             response = await self._with_timeout(
