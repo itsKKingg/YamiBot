@@ -45,17 +45,10 @@ RUN chown -R nobody:nogroup /app && \
 # Switch to non-root user
 USER nobody:nogroup
 
-# Health check endpoint (simple HTTP server for health checks)
+# Health check endpoint
 HEALTHCHECK --interval=30s --timeout=3s \
-    CMD python -c "import http.server; import socketserver; \
-    class Handler(http.server.BaseHTTPRequestHandler): \
-        def do_GET(self): \
-            self.send_response(200); \
-            self.send_header('Content-type', 'text/plain'); \
-            self.end_headers(); \
-            self.wfile.write(b'YamiBot is healthy'); \
-    with socketserver.TCPServer(('', 8000), Handler) as httpd: \
-        httpd.serve_forever()" || exit 1
+    CMD python -c "import urllib.request; \
+    urllib.request.urlopen('http://localhost:8000/health', timeout=2).read()" || exit 1
 
 # Command to run the bot
 CMD ["python", "-m", "src.bot"]

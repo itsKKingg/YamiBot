@@ -17,6 +17,7 @@ from .utils.logger import setup_logging
 from .fallback_manager import FallbackManager
 from .rate_limiter import RateLimiter
 from .conversation_manager import ConversationManager
+from .health_check import start_health_server, stop_health_server
 
 # Setup logging
 logger = setup_logging(__name__)
@@ -201,7 +202,10 @@ class YamiBot(commands.Bot):
         Cleanup when bot is shutting down
         """
         logger.info("Shutting down bot...")
-        await super().close()
+        
+        # Stop health check server
+        await stop_health_server()
+        
         logger.info("Bot shutdown complete")
 
 def create_bot() -> YamiBot:
@@ -230,6 +234,10 @@ async def main():
     bot = create_bot()
     
     try:
+        # Start health check server
+        start_health_server()
+        logger.info("Health check server started")
+        
         # Start the bot
         await bot.start(bot.config.discord_token)
         
