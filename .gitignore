@@ -1,0 +1,59 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+.venv/
+venv/
+ENV/
+
+# Environment files
+.env
+.env.local
+.env.*
+
+# Logs
+logs/
+*.log
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Docker
+.dockerignore
+
+# Test
+.test/
+tests/
+coverage/
+*.cover
+
+# Local development
+*.local
+*.bak
+*.backup
+
+# Database
+*.db
+*.sqlite
+
+# Cache
+.cache/
+
+# Dependencies
+node_modules/
+
+# Mac
+.DS_Store
+
+# Windows
+Thumbs.db
