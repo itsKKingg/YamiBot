@@ -6,6 +6,8 @@ This module provides centralized logging functionality for the bot.
 
 import logging
 import os
+import psutil
+import time
 from datetime import datetime
 from typing import Optional
 
@@ -101,3 +103,36 @@ def setup_root_logging():
     root_logger.addHandler(console_handler)
     
     return root_logger
+
+def log_memory_status():
+    """
+    Log current memory usage of the process
+    
+    Returns:
+        Dictionary with memory usage information
+    """
+    try:
+        process = psutil.Process(os.getpid())
+        memory_info = process.memory_info()
+        
+        memory_mb = memory_info.rss / 1024 / 1024
+        virtual_mb = memory_info.vms / 1024 / 1024
+        
+        logger.info(
+            f"Memory usage: {memory_mb:.2f}MB "
+            f"(Virtual: {virtual_mb:.2f}MB)"
+        )
+        
+        return {
+            "rss_mb": round(memory_mb, 2),
+            "vms_mb": round(virtual_mb, 2),
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        logger.error(f"Error getting memory status: {e}")
+        return {
+            "rss_mb": 0,
+            "vms_mb": 0,
+            "timestamp": time.time(),
+            "error": str(e)
+        }

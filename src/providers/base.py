@@ -18,22 +18,32 @@ class BaseProvider(ABC):
     Abstract base class for all AI providers
     """
     
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, shared_session: Optional[Any] = None):
         """
         Initialize the provider with configuration
         
         Args:
             config: Configuration object containing API keys and settings
+            shared_session: Shared aiohttp session (optional)
         """
         self.config = config
         self.name = self.__class__.__name__.replace("Provider", "").lower()
         self.model = self._get_model_name()
         self.timeout = 30  # Default timeout in seconds
+        self.shared_session = shared_session  # Shared session from bot
         
         # Initialize API client
         self.client = self._initialize_client()
         
         logger.info(f"Initialized {self.name} provider with model {self.model}")
+    
+    def set_shared_session(self, shared_session):
+        """Set the shared aiohttp session"""
+        self.shared_session = shared_session
+    
+    def get_timeout(self, provider_name: str) -> int:
+        """Get timeout for specific provider from config"""
+        return self.config.provider_timeouts.get(provider_name, self.timeout)
     
     @abstractmethod
     def _get_model_name(self) -> str:

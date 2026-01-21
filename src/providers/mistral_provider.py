@@ -25,9 +25,10 @@ class MistralProvider(BaseProvider):
     Mistral AI provider implementation
     """
     
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config, shared_session=None):
+        super().__init__(config, shared_session)
         self.last_request_time = 0  # For RPS tracking
+        self._timeout = self.get_timeout("mistral")
     
     def _get_model_name(self) -> str:
         return "mistral-small-latest"
@@ -82,6 +83,9 @@ class MistralProvider(BaseProvider):
         """
         if not MISTRAL_AVAILABLE:
             raise ImportError("Mistral AI library is not installed")
+        
+        # Use configured timeout
+        timeout = self.get_timeout("mistral")
         
         # Set default parameters
         temperature = kwargs.get("temperature", 0.7)

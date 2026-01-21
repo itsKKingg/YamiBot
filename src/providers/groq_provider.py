@@ -25,6 +25,10 @@ class GroqProvider(BaseProvider):
     Groq AI provider implementation
     """
     
+    def __init__(self, config, shared_session=None):
+        super().__init__(config, shared_session)
+        self._timeout = self.get_timeout("groq")
+    
     def _get_model_name(self) -> str:
         return "openai/gpt-oss-120b"
     
@@ -65,6 +69,9 @@ class GroqProvider(BaseProvider):
         if not GROQ_AVAILABLE:
             raise ImportError("Groq library is not installed")
         
+        # Use configured timeout
+        timeout = self.get_timeout("groq")
+        
         # Set default parameters
         temperature = kwargs.get("temperature", 0.7)
         max_tokens = kwargs.get("max_tokens", 1024)
@@ -87,7 +94,7 @@ class GroqProvider(BaseProvider):
                 {"role": "user", "content": prompt}
             ])
             
-            # Make the API call
+            # Make the API call with timeout
             response = await self._with_timeout(
                 self.client.chat.completions.create(
                     model=self.model,
@@ -95,7 +102,8 @@ class GroqProvider(BaseProvider):
                     temperature=temperature,
                     max_tokens=max_tokens,
                     stream=stream
-                )
+                ),
+                timeout=timeout
             )
             
             if stream:

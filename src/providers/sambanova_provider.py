@@ -20,24 +20,32 @@ class SambanovaProvider(BaseProvider):
     Uses gpt-oss-120b model via REST API
     """
     
+    def __init__(self, config, shared_session=None):
+        super().__init__(config, shared_session)
+        self.api_base = "https://api.sambanova.ai/v1"
+    
     def _get_model_name(self) -> str:
         """Get the model name for SambaNova"""
         return "gpt-oss-120b"
     
     def _initialize_client(self) -> Optional[aiohttp.ClientSession]:
         """
-        Initialize aiohttp client session for SambaNova API
-        
-        Returns:
-            None (client session created per request)
+        Initialize client for SambaNova API
+        Uses shared session if available
         """
         # Validate API key
         if not self.config.sambanova_api_key:
             logger.warning("SambaNova API key not configured")
             return None
         
-        self.api_base = "https://api.sambanova.ai/v1"
-        return None  # Will create session per request
+        # Use shared session if available
+        if self.shared_session:
+            logger.debug("Using shared aiohttp session for SambaNova")
+            return self.shared_session
+        else:
+            # Fallback for backward compatibility
+            logger.warning("No shared session available, creating SambaNova-specific session")
+            return aiohttp.ClientSession()
     
     def get_limits(self) -> Dict[str, Any]:
         """Get rate limits for SambaNova"""
@@ -59,6 +67,9 @@ class SambanovaProvider(BaseProvider):
             Tuple of (response_text, metadata)
         """
         start_time = time.time()
+        
+        # Use configured timeout
+        timeout = self.get_timeout("sambanova")
         
         try:
             # Get conversation history if provided
@@ -86,21 +97,23 @@ class SambanovaProvider(BaseProvider):
             
             logger.info(f"Querying SambaNova with model {self.model}")
             
+            # Use shared session or create one temporarily
+            session = self.shared_session if self.shared_session else self.client
+            
             # Make API request
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.api_base}/chat/completions",
-                    json=payload,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=self.timeout)
-                ) as response:
-                    
-                    if response.status != 200:
-                        error_text = await response.text()
-                        logger.error(f"SambaNova API error: {response.status} - {error_text}")
-                        raise Exception(f"SambaNova API error: {response.status}")
-                    
-                    result = await response.json()
+            async with session.post(
+                f"{self.api_base}/chat/completions",
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=timeout)
+            ) as response:
+                
+                if response.status != 200:
+                    error_text = await response.text()
+                    logger.error(f"SambaNova API error: {response.status} - {error_text}")
+                    raise Exception(f"SambaNova API error: {response.status}")
+                
+                result = await response.json()
             
             # Extract response
             if "choices" not in result or len(result["choices"]) == 0:

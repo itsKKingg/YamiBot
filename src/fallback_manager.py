@@ -43,6 +43,7 @@ class FallbackManager:
         self.provider_status: Dict[str, str] = {}
         self.last_fallback_reason: Optional[str] = None
         self.last_used_provider: Optional[str] = None
+        self.shared_session = None
         
         # Provider priority order (from highest to lowest)
         # Updated order: Cerebras → SambaNova → Groq → Mistral
@@ -52,6 +53,14 @@ class FallbackManager:
             "groq",
             "mistral"
         ]
+    
+    def set_shared_session(self, session):
+        """Set the shared aiohttp session for all providers"""
+        self.shared_session = session
+        # Update existing providers
+        for provider in self.providers:
+            provider.set_shared_session(session)
+        logger.info("Shared session set for all providers")
     
     async def initialize(self) -> None:
         """
@@ -81,7 +90,7 @@ class FallbackManager:
         for provider_name, ProviderClass in provider_classes:
             try:
                 logger.info(f"Initializing {provider_name} provider...")
-                provider = ProviderClass(self.config)
+                provider = ProviderClass(self.config, self.shared_session)
                 self.providers.append(provider)
                 self.provider_status[provider.name] = ProviderStatus.AVAILABLE
                 logger.info(f"✓ Successfully initialized {provider_name} provider")

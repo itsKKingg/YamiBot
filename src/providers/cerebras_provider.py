@@ -19,10 +19,9 @@ class CerebrasProvider(BaseProvider):
     Cerebras AI provider implementation
     """
     
-    def __init__(self, config):
-        super().__init__(config)
+    def __init__(self, config, shared_session=None):
+        super().__init__(config, shared_session)
         self.api_url = "https://api.cerebras.ai/v1/chat/completions"
-        self.session = None
     
     def _get_model_name(self) -> str:
         return "gpt-oss-120b"
@@ -30,20 +29,25 @@ class CerebrasProvider(BaseProvider):
     def _initialize_client(self) -> Any:
         """
         Initialize the Cerebras HTTP client
+        Uses shared session if available, otherwise creates one for compatibility
         """
         api_key = self.config.cerebras_api_key
         if not api_key:
             raise ValueError("CEREBRAS_API_KEY not configured")
         
-        # Create aiohttp session
-        self.session = aiohttp.ClientSession(
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json"
-            }
-        )
-        
-        return self.session
+        # Use shared session if available, otherwise create a session for this provider
+        if self.shared_session:
+            logger.debug("Using shared aiohttp session for Cerebras")
+            return self.shared_session
+        else:
+            # Fallback for backward compatibility - create our own session
+            logger.warning("No shared session available, creating Cerebras-specific session")
+            return aiohttp.ClientSession(
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json"
+                }
+            )
     
     def get_limits(self) -> Dict[str, Any]:
         """
@@ -66,8 +70,11 @@ class CerebrasProvider(BaseProvider):
         Returns:
             Tuple containing response text and metadata
         """
-        if not self.session:
-            raise ValueError("Cerebras session not initialized")
+        if not self.client:
+            raise ValueError("Cerebras client not initialized")
+        
+        # Use configured timeout
+        timeout = self.get_timeout("cerebras")
         
         # Set default parameters
         temperature = kwargs.get("temperature", 0.7)
@@ -97,11 +104,14 @@ class CerebrasProvider(BaseProvider):
                 "max_tokens": max_tokens
             }
             
-            # Make the API call
-            async with self.session.post(
+            # Use shared session or create one temporarily
+            session = self.shared_session if self.shared_session else self.client
+            
+            # Make the API call with timeout
+            async with session.post(
                 self.api_url,
                 data=json.dumps(payload),
-                timeout=aiohttp.ClientTimeout(total=self.timeout)
+                timeout=aiohttp.ClientTimeout(total=timeout)
             ) as response:
                 if response.status != 200:
                     error_text = await response.text()
@@ -130,9 +140,13 @@ class CerebrasProvider(BaseProvider):
             await self._handle_api_error(e, "Cerebras")
             raise
         
+        
     async def close(self):
         """
         Close the aiohttp session
+        Note: For shared sessions, this should be handled by the bot
         """
-        if self.session:
-            await self.session.close()
+        # Only close if we're not using a shared session
+        if not self.shared_session and self.client:
+            await self.client.close()
+            logger.info("Cerebras session closed")
