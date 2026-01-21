@@ -55,35 +55,64 @@ class FallbackManager:
     
     async def initialize(self) -> None:
         """
-        Initialize all providers and set their initial status
+        Initialize all providers and set their initial status.
+        Providers that fail to initialize are skipped with a warning.
         """
         logger.info("Initializing providers...")
         
-        # Import and initialize providers dynamically
-        try:
-            # Import provider modules (updated provider order)
-            from .providers.cerebras_provider import CerebrasProvider
-            from .providers.sambanova_provider import SambanovaProvider
-            from .providers.groq_provider import GroqProvider
-            from .providers.mistral_provider import MistralProvider
-            
-            # Initialize providers in priority order: Cerebras → SambaNova → Groq → Mistral
-            self.providers = [
-                CerebrasProvider(self.config),
-                SambanovaProvider(self.config),
-                GroqProvider(self.config),
-                MistralProvider(self.config)
-            ]
-            
-            # Set initial status for all providers
-            for provider in self.providers:
+        # Import provider modules (updated provider order)
+        from .providers.cerebras_provider import CerebrasProvider
+        from .providers.sambanova_provider import SambanovaProvider
+        from .providers.groq_provider import GroqProvider
+        from .providers.mistral_provider import MistralProvider
+        
+        # Provider classes in priority order: Cerebras → SambaNova → Groq → Mistral
+        provider_classes = [
+            ("cerebras", CerebrasProvider),
+            ("sambanova", SambanovaProvider),
+            ("groq", GroqProvider),
+            ("mistral", MistralProvider)
+        ]
+        
+        # Initialize each provider individually with graceful error handling
+        initialized_count = 0
+        failed_providers = []
+        
+        for provider_name, ProviderClass in provider_classes:
+            try:
+                logger.info(f"Initializing {provider_name} provider...")
+                provider = ProviderClass(self.config)
+                self.providers.append(provider)
                 self.provider_status[provider.name] = ProviderStatus.AVAILABLE
+                logger.info(f"✓ Successfully initialized {provider_name} provider")
+                initialized_count += 1
                 
-            logger.info(f"Initialized {len(self.providers)} providers: {[p.name for p in self.providers]}")
-            
-        except Exception as e:
-            logger.error(f"Failed to initialize providers: {e}", exc_info=True)
-            raise
+            except ImportError as e:
+                logger.warning(f"✗ Skipping {provider_name} provider: Missing library - {e}")
+                failed_providers.append(f"{provider_name} (missing library)")
+                continue
+                
+            except ValueError as e:
+                logger.warning(f"✗ Skipping {provider_name} provider: Configuration error - {e}")
+                failed_providers.append(f"{provider_name} (config error)")
+                continue
+                
+            except Exception as e:
+                logger.warning(f"✗ Skipping {provider_name} provider: {type(e).__name__} - {e}")
+                failed_providers.append(f"{provider_name} ({type(e).__name__})")
+                continue
+        
+        # Log summary
+        if initialized_count == 0:
+            logger.error("CRITICAL: No providers could be initialized!")
+            raise RuntimeError("No providers available - cannot start bot")
+        
+        logger.info(f"Provider initialization complete: {initialized_count}/{len(provider_classes)} providers available")
+        logger.info(f"Available providers: {[p.name for p in self.providers]}")
+        
+        if failed_providers:
+            logger.warning(f"Failed providers: {', '.join(failed_providers)}")
+            logger.info("Bot will continue with available providers")
     
     async def query(self, prompt: str, **kwargs) -> Tuple[Optional[str], Dict[str, Any]]:
         """

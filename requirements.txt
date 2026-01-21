@@ -6,7 +6,7 @@ discord.py>=2.3.2
 
 # AI Provider SDKs
 groq>=0.5.0
-mistralai>=0.0.1
+mistralai>=0.0.7
 aiohttp>=3.9.0
 
 # Utility libraries

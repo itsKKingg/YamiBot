@@ -14,8 +14,7 @@ from ..utils.logger import setup_logging
 logger = setup_logging(__name__)
 
 try:
-    from mistralai.client import MistralClient
-    from mistralai.models.chat_completion import ChatMessage
+    from mistralai import Mistral, UserMessage, AssistantMessage, SystemMessage
     MISTRAL_AVAILABLE = True
 except ImportError:
     logger.warning("Mistral AI library not available - MistralProvider will not work")
@@ -44,7 +43,7 @@ class MistralProvider(BaseProvider):
         if not api_key:
             raise ValueError("MISTRAL_API_KEY not configured")
         
-        client = MistralClient(api_key=api_key)
+        client = Mistral(api_key=api_key)
         return client
     
     def get_limits(self) -> Dict[str, Any]:
@@ -104,12 +103,25 @@ class MistralProvider(BaseProvider):
                 {"role": "user", "content": prompt}
             ])
             
-            # Convert to Mistral ChatMessage format
-            messages = [ChatMessage(role=msg["role"], content=msg["content"]) for msg in message_list]
+            # Convert to Mistral message format
+            messages = []
+            for msg in message_list:
+                role = msg["role"]
+                content = msg["content"]
+                
+                if role == "user":
+                    messages.append(UserMessage(content=content))
+                elif role == "assistant":
+                    messages.append(AssistantMessage(content=content))
+                elif role == "system":
+                    messages.append(SystemMessage(content=content))
             
-            # Make the API call
-            response = await self._with_timeout(
-                self.client.chat(
+            # Make the API call (synchronous in new Mistral SDK)
+            # Note: The new SDK uses sync calls, so we need to handle this differently
+            import asyncio
+            response = await asyncio.get_event_loop().run_in_executor(
+                None,
+                lambda: self.client.chat.complete(
                     model=self.model,
                     messages=messages,
                     temperature=temperature,

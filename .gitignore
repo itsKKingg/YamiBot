@@ -37,6 +37,7 @@ dist/
 tests/
 coverage/
 *.cover
+test_*.py
 
 # Local development
 *.local
