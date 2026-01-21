@@ -19,10 +19,12 @@ from contextlib import asynccontextmanager
 from .utils.config import Config
 from .utils.logger import setup_logging
 from .utils.logger import log_memory_status
+from .utils.error_handler import format_error_for_user, UserFriendlyError
 from .fallback_manager import FallbackManager
 from .rate_limiter import RateLimiter
 from .conversation_manager import ConversationManager
 from .health_check import start_health_server, stop_health_server
+from .health_checker import HealthChecker
 
 # Setup logging
 logger = setup_logging(__name__)

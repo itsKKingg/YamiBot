@@ -4,6 +4,8 @@ Fallback Manager for YamiBot
 This module orchestrates the multi-provider API fallback system.
 It maintains a list of providers in priority order and handles
 fallback logic when providers are rate-limited or unavailable.
+
+Enhanced with circuit breakers and retry logic for improved reliability.
 """
 
 import asyncio
@@ -14,6 +16,8 @@ from datetime import datetime, timedelta
 from .providers.base import BaseProvider
 from .utils.logger import setup_logging
 from .utils.config import Config
+from .utils.circuit_breaker import CircuitBreaker, CircuitState
+from .utils.retry import retry_with_backoff
 
 logger = setup_logging(__name__)
 
@@ -41,6 +45,7 @@ class FallbackManager:
         self.config = config
         self.providers: List[BaseProvider] = []
         self.provider_status: Dict[str, str] = {}
+        self.circuit_breakers: Dict[str, CircuitBreaker] = {}  # NEW: Circuit breakers for each provider
         self.last_fallback_reason: Optional[str] = None
         self.last_used_provider: Optional[str] = None
         self.shared_session = None
@@ -93,7 +98,14 @@ class FallbackManager:
                 provider = ProviderClass(self.config, self.shared_session)
                 self.providers.append(provider)
                 self.provider_status[provider.name] = ProviderStatus.AVAILABLE
-                logger.info(f"✓ Successfully initialized {provider_name} provider")
+                
+                # NEW: Create circuit breaker for this provider
+                self.circuit_breakers[provider_name] = CircuitBreaker(
+                    name=provider_name,
+                    failure_threshold=5,  # Open after 5 consecutive failures
+                    timeout=300  # Try recovery after 5 minutes
+                )
+                logger.info(f"✓ Successfully initialized {provider_name} provider with circuit breaker")
                 initialized_count += 1
                 
             except ImportError as e:
@@ -118,6 +130,7 @@ class FallbackManager:
         
         logger.info(f"Provider initialization complete: {initialized_count}/{len(provider_classes)} providers available")
         logger.info(f"Available providers: {[p.name for p in self.providers]}")
+        logger.info(f"Circuit breakers configured for: {list(self.circuit_breakers.keys())}")
         
         if failed_providers:
             logger.warning(f"Failed providers: {', '.join(failed_providers)}")
@@ -125,7 +138,7 @@ class FallbackManager:
     
     async def query(self, prompt: str, **kwargs) -> Tuple[Optional[str], Dict[str, Any]]:
         """
-        Query the AI providers with fallback capability
+        Query the AI providers with fallback capability using circuit breakers and retry logic
         
         Args:
             prompt: The user's input prompt
@@ -142,14 +155,24 @@ class FallbackManager:
         
         logger.info(f"Processing query: {prompt[:100]}...")
         
-        # Try providers in priority order
+        # Try providers in priority order with circuit breaker logic
         for provider in self.providers:
             provider_name = provider.name
             attempted_providers.append(provider_name)
             
-            # Check if provider is available
-            status = self.provider_status.get(provider_name, ProviderStatus.AVAILABLE)
+            # NEW: Check circuit breaker status first
+            if provider_name in self.circuit_breakers:
+                breaker = self.circuit_breakers[provider_name]
+                
+                # Skip provider if circuit is OPEN and not ready for recovery
+                if not breaker.can_attempt():
+                    reason = f"Provider {provider_name} circuit {breaker.state.value} (skipping)"
+                    fallback_reasons.append(reason)
+                    logger.debug(f"Skipping {provider_name} (circuit {breaker.state.value})")
+                    continue
             
+            # Check if provider is marked as unavailable
+            status = self.provider_status.get(provider_name, ProviderStatus.AVAILABLE)
             if status != ProviderStatus.AVAILABLE:
                 reason = f"Provider {provider_name} is {status}"
                 fallback_reasons.append(reason)
@@ -167,8 +190,22 @@ class FallbackManager:
                 
                 logger.info(f"Attempting query with {provider_name} provider")
                 
-                # Make the API call
-                response, metadata = await provider.query(prompt, **kwargs)
+                # NEW: Wrap query in retry logic with exponential backoff
+                response, metadata = await retry_with_backoff(
+                    lambda: provider.query(prompt, **kwargs),
+                    max_attempts=3,
+                    base_delay=1.0
+                )
+                
+                # Request succeeded - record success in circuit breaker
+                if provider_name in self.circuit_breakers:
+                    old_state = self.circuit_breakers[provider_name].state
+                    self.circuit_breakers[provider_name].record_success()
+                    new_state = self.circuit_breakers[provider_name].state
+                    
+                    # Log state transition if changed
+                    if old_state != new_state:
+                        logger.info(f"{provider_name}: Circuit transitioned {old_state.value} → {new_state.value} (success)")
                 
                 # Update metadata with provider info
                 metadata.update({
@@ -176,7 +213,8 @@ class FallbackManager:
                     "attempted_providers": attempted_providers,
                     "fallback_reasons": fallback_reasons,
                     "response_time": time.time() - start_time,
-                    "timestamp": datetime.utcnow().isoformat()
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "retry_attempts": metadata.get("retry_count", 1)  # Track retry count
                 })
                 
                 # Update last used provider
@@ -188,11 +226,25 @@ class FallbackManager:
                 return response, metadata
                 
             except Exception as e:
+                # NEW: Record failure in circuit breaker
+                if provider_name in self.circuit_breakers:
+                    breaker = self.circuit_breakers[provider_name]
+                    old_state = breaker.state
+                    breaker.record_failure()
+                    new_state = breaker.state
+                    
+                    # Log state transition if changed
+                    if old_state != new_state:
+                        logger.warning(
+                            f"{provider_name}: Circuit transitioned {old_state.value} → {new_state.value} "
+                            f"(failure: {type(e).__name__})"
+                        )
+                
                 # Mark provider as failed
                 self.provider_status[provider_name] = ProviderStatus.FAILED
-                reason = f"Provider {provider_name} failed: {str(e)}"
+                reason = f"Provider {provider_name} failed: {type(e).__name__}: {str(e)}"
                 fallback_reasons.append(reason)
-                logger.error(reason, exc_info=True)
+                logger.warning(reason)
                 
                 # Continue to next provider
                 continue
@@ -212,7 +264,7 @@ class FallbackManager:
     
     def get_provider_status(self) -> Dict[str, Any]:
         """
-        Get the current status of all providers
+        Get the current status of all providers including circuit breaker state
         
         Returns:
             Dictionary with provider status information
@@ -220,11 +272,21 @@ class FallbackManager:
         status_info = {}
         
         for provider in self.providers:
-            status_info[provider.name] = {
-                "status": self.provider_status.get(provider.name, ProviderStatus.AVAILABLE),
+            provider_name = provider.name
+            breaker_status = {}
+            
+            # Include circuit breaker status if available
+            if provider_name in self.circuit_breakers:
+                breaker = self.circuit_breakers[provider_name]
+                breaker_status = breaker.get_status()
+            
+            status_info[provider_name] = {
+                "status": self.provider_status.get(provider_name, ProviderStatus.AVAILABLE),
                 "model": provider.model,
                 "limits": provider.get_limits(),
-                "remaining": provider.get_remaining_quota()
+                "remaining": provider.get_remaining_quota(),
+                "circuit_breaker": breaker_status,
+                "available_for_requests": self._is_provider_available(provider_name)
             }
         
         return status_info
