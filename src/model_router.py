@@ -70,6 +70,26 @@ class ModelRouter:
             ("groq", "mixtral-8x7b-32768"),
             ("mistral", "mistral-medium"),
             ("cerebras", "gpt-oss-120b")
+        ],
+        "music_search": [
+            ("google", "gemini-2.0-flash"),
+            ("mistral", "mistral-medium")
+        ],
+        "music_lyrics": [
+            ("google", "gemini-1.5-pro"),
+            ("groq", "llama-3.1-70b")
+        ],
+        "music_artist": [
+            ("google", "gemini-1.5-pro"),
+            ("mistral", "mistral-large-2411")
+        ],
+        "music_discography": [
+            ("google", "gemini-2.0-flash"),
+            ("groq", "mixtral-8x7b-32768")
+        ],
+        "music_features": [
+            ("groq", "mixtral-8x7b-32768"),
+            ("groq", "llama-3.1-70b")
         ]
     }
     
