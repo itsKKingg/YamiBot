@@ -3,11 +3,13 @@ Rate Limiter for YamiBot
 
 This module tracks API usage and enforces rate limits for each provider
 to prevent exceeding quotas and ensure fair usage across providers.
+Also implements per-user rate limiting to prevent abuse.
 """
 
 import time
 from datetime import datetime, timedelta
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple
+from collections import defaultdict
 import asyncio
 
 from .utils.logger import setup_logging
@@ -16,18 +18,43 @@ logger = setup_logging(__name__)
 
 class RateLimiter:
     """
-    Tracks and enforces rate limits for AI providers
+    Tracks and enforces rate limits for AI providers and users
     """
     
-    def __init__(self):
+    def __init__(self, config=None):
         """
         Initialize rate limiter with empty tracking dictionaries
+        
+        Args:
+            config: Optional configuration object for user rate limit settings
         """
         # Track daily requests: {provider_name: {date: count}}
         self.daily_requests: Dict[str, Dict[str, int]] = {}
         
         # Track RPS limits: {provider_name: [(timestamp, count)]}
         self.rps_tracking: Dict[str, list] = {}
+        
+        # Per-user rate limiting
+        self.user_requests = defaultdict(list)  # user_id -> [timestamps]
+        self.user_cooldowns = defaultdict(float)  # user_id -> cooldown_until
+        
+        # Load user rate limit configuration
+        if config:
+            self.max_requests_per_minute = getattr(config, 'max_requests_per_minute', 5)
+            self.max_requests_per_hour = getattr(config, 'max_requests_per_hour', 30)
+            self.cooldown_seconds = getattr(config, 'cooldown_seconds', 5)
+            self.trusted_user_multiplier = getattr(config, 'trusted_user_multiplier', 2)
+        else:
+            self.max_requests_per_minute = 5
+            self.max_requests_per_hour = 30
+            self.cooldown_seconds = 5
+            self.trusted_user_multiplier = 2
+        
+        logger.info(
+            f"User rate limits: {self.max_requests_per_minute}/min, "
+            f"{self.max_requests_per_hour}/hour, "
+            f"{self.cooldown_seconds}s cooldown"
+        )
         
         # Provider-specific limits
         self.provider_limits = {
@@ -277,3 +304,127 @@ class RateLimiter:
                     logger.info(f"  {provider}: {quota_info['daily']['used']}/{quota_info['daily']['limit']} daily requests")
                 if "rps" in quota_info:
                     logger.info(f"  {provider}: {quota_info['rps']['current']}/{quota_info['rps']['limit']} RPS")
+    
+    # ========== Per-User Rate Limiting Methods ==========
+    
+    def can_user_request(self, user_id: int, is_trusted: bool = False) -> Tuple[bool, Optional[str]]:
+        """
+        Check if user can make a request (per-user rate limiting)
+        
+        Args:
+            user_id: Discord user ID
+            is_trusted: Whether user is trusted (gets higher limits)
+            
+        Returns:
+            Tuple of (allowed, reason_if_denied)
+            - allowed: True if request is allowed
+            - reason_if_denied: Description if denied, None if allowed
+        """
+        now = time.time()
+        
+        # Apply trusted user multiplier
+        multiplier = self.trusted_user_multiplier if is_trusted else 1
+        max_per_minute = self.max_requests_per_minute * multiplier
+        max_per_hour = self.max_requests_per_hour * multiplier
+        
+        # Check if user is in cooldown
+        if now < self.user_cooldowns.get(user_id, 0):
+            remaining = int(self.user_cooldowns[user_id] - now)
+            return False, f"Rate limited. Please try again in {remaining} second{'s' if remaining != 1 else ''}."
+        
+        # Get user's recent requests
+        requests = self.user_requests[user_id]
+        
+        # Remove old requests (older than 1 hour)
+        requests = [ts for ts in requests if now - ts < 3600]
+        self.user_requests[user_id] = requests
+        
+        # Check per-minute limit
+        recent_minute = [ts for ts in requests if now - ts < 60]
+        if len(recent_minute) >= max_per_minute:
+            self.user_cooldowns[user_id] = now + self.cooldown_seconds
+            logger.info(f"User {user_id} hit per-minute rate limit ({len(recent_minute)}/{max_per_minute})")
+            return False, f"Too many requests. You can make up to {max_per_minute} requests per minute."
+        
+        # Check per-hour limit
+        if len(requests) >= max_per_hour:
+            # Calculate time until oldest request expires
+            oldest_request = min(requests)
+            time_until_reset = int(3600 - (now - oldest_request))
+            logger.info(f"User {user_id} hit per-hour rate limit ({len(requests)}/{max_per_hour})")
+            return False, f"Hourly limit reached ({max_per_hour} requests/hour). Resets in {time_until_reset // 60} minutes."
+        
+        return True, None
+    
+    def record_user_request(self, user_id: int):
+        """
+        Record a user's successful request
+        
+        Args:
+            user_id: Discord user ID
+        """
+        self.user_requests[user_id].append(time.time())
+        logger.debug(f"Recorded request for user {user_id}")
+    
+    def get_user_rate_limit_status(self, user_id: int, is_trusted: bool = False) -> Dict[str, Any]:
+        """
+        Get user's current rate limit status
+        
+        Args:
+            user_id: Discord user ID
+            is_trusted: Whether user is trusted
+            
+        Returns:
+            Dictionary with rate limit status information
+        """
+        now = time.time()
+        requests = [ts for ts in self.user_requests[user_id] if now - ts < 3600]
+        recent_minute = [ts for ts in requests if now - ts < 60]
+        
+        multiplier = self.trusted_user_multiplier if is_trusted else 1
+        max_per_minute = self.max_requests_per_minute * multiplier
+        max_per_hour = self.max_requests_per_hour * multiplier
+        
+        status = {
+            'user_id': user_id,
+            'is_trusted': is_trusted,
+            'requests_this_minute': len(recent_minute),
+            'requests_this_hour': len(requests),
+            'max_per_minute': max_per_minute,
+            'max_per_hour': max_per_hour,
+            'remaining_this_minute': max(0, max_per_minute - len(recent_minute)),
+            'remaining_this_hour': max(0, max_per_hour - len(requests)),
+            'in_cooldown': now < self.user_cooldowns.get(user_id, 0),
+            'cooldown_remaining': max(0, int(self.user_cooldowns.get(user_id, 0) - now))
+        }
+        
+        return status
+    
+    def reset_user_cooldown(self, user_id: int) -> bool:
+        """
+        Reset a user's cooldown (admin function)
+        
+        Args:
+            user_id: Discord user ID
+            
+        Returns:
+            True if cooldown was active and reset, False otherwise
+        """
+        if user_id in self.user_cooldowns and self.user_cooldowns[user_id] > time.time():
+            del self.user_cooldowns[user_id]
+            logger.info(f"Reset cooldown for user {user_id}")
+            return True
+        return False
+    
+    def clear_user_history(self, user_id: int):
+        """
+        Clear a user's request history (admin function)
+        
+        Args:
+            user_id: Discord user ID
+        """
+        if user_id in self.user_requests:
+            del self.user_requests[user_id]
+        if user_id in self.user_cooldowns:
+            del self.user_cooldowns[user_id]
+        logger.info(f"Cleared rate limit history for user {user_id}")

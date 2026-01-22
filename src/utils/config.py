@@ -52,6 +52,23 @@ class Config:
             'mistral': int(self._get_env("MISTRAL_TIMEOUT", default="60"))          # 60 seconds
         }
         
+        # Permission & Security settings
+        self.admin_user_ids = self._get_env("ADMIN_USER_IDS", default="")
+        self.trusted_user_ids = self._get_env("TRUSTED_USER_IDS", default="")
+        self.whitelist_user_ids = self._get_env("WHITELIST_USER_IDS", default="")
+        self.blacklist_user_ids = self._get_env("BLACKLIST_USER_IDS", default="")
+        
+        # User Rate Limiting settings
+        self.max_requests_per_minute = int(self._get_env("MAX_REQUESTS_PER_MINUTE", default="5"))
+        self.max_requests_per_hour = int(self._get_env("MAX_REQUESTS_PER_HOUR", default="30"))
+        self.cooldown_seconds = int(self._get_env("COOLDOWN_SECONDS", default="5"))
+        self.trusted_user_multiplier = int(self._get_env("TRUSTED_USER_MULTIPLIER", default="2"))
+        
+        # Input Validation settings
+        self.max_message_length = int(self._get_env("MAX_MESSAGE_LENGTH", default="2000"))
+        self.min_message_length = int(self._get_env("MIN_MESSAGE_LENGTH", default="1"))
+        self.max_response_length = int(self._get_env("MAX_RESPONSE_LENGTH", default="2000"))
+        
         # Validate required configuration
         self._validate_config()
         

@@ -13,6 +13,14 @@ A production-ready AI Discord bot that responds naturally to @mentions with inte
 - 📊 **Smart Rate Limiting**: Prevents hitting API limits
 - 🚀 **Cloud Ready**: Deploy to Koyeb, Railway, or any Docker platform
 
+### Security Features 🔒
+- 🛡️ **Input Validation**: Blocks injection attacks, spam, and malicious content
+- ⏱️ **Per-User Rate Limiting**: Prevents abuse (5/min, 30/hour configurable)
+- 👥 **Permission System**: Admin, trusted, whitelist, and blacklist support
+- 🚫 **Spam Protection**: Detects excessive special characters and repeated patterns
+- 🔍 **Message Validation**: Sanitizes and validates all input/output
+- 📏 **Length Enforcement**: Respects Discord's 2000 character limit
+
 ### AI Providers (Priority Order)
 1. **Cerebras** (Primary) - `gpt-oss-120b`
 2. **SambaNova** (Backup) - `gpt-oss-120b`
@@ -134,8 +142,9 @@ YamiBot/
 │   ├── __init__.py
 │   ├── bot.py                      # Main Discord bot with @mention handling
 │   ├── fallback_manager.py        # Provider fallback orchestration
-│   ├── rate_limiter.py             # Rate limit tracking
+│   ├── rate_limiter.py             # Rate limiting (provider + per-user)
 │   ├── conversation_manager.py    # Conversation context management
+│   ├── message_validator.py       # Discord message validation
 │   ├── providers/
 │   │   ├── __init__.py
 │   │   ├── base.py                # Abstract provider class
@@ -146,8 +155,9 @@ YamiBot/
 │   └── utils/
 │       ├── __init__.py
 │       ├── logger.py              # Logging configuration
-│       ├── cache.py               # Caching system
-│       └── config.py              # Environment configuration
+│       ├── config.py              # Environment configuration
+│       ├── input_validator.py     # Input validation & sanitization
+│       └── permissions.py         # Permission management system
 ├── deployment/
 │   ├── Dockerfile                 # Production Docker image
 │   ├── docker-compose.yml         # Local development setup
@@ -157,7 +167,9 @@ YamiBot/
 │   └── deploy.yml                # CI/CD pipeline
 ├── .env.example                  # Environment template
 ├── requirements.txt              # Python dependencies
+├── test_validation.py            # Security feature test suite
 ├── README.md                     # This file
+├── SECURITY.md                   # Security documentation
 ├── IMPROVEMENTS.md               # Phase 2 enhancement suggestions
 └── .gitignore
 ```
@@ -178,6 +190,21 @@ YamiBot/
 | `DEBUG_MODE` | No | Enable debug logging | `false` |
 | `MAX_CONVERSATION_HISTORY` | No | Max messages to remember | `10` |
 | `CONVERSATION_TIMEOUT` | No | Context timeout (seconds) | `3600` |
+
+### Security Settings
+
+| Variable | Required | Description | Default |
+|----------|----------|-------------|---------|
+| `ADMIN_USER_IDS` | No | Comma-separated admin Discord user IDs | - |
+| `TRUSTED_USER_IDS` | No | Trusted users (higher rate limits) | - |
+| `WHITELIST_USER_IDS` | No | If set, only these users can use bot | - |
+| `BLACKLIST_USER_IDS` | No | Banned users | - |
+| `MAX_REQUESTS_PER_MINUTE` | No | Per-user rate limit | `5` |
+| `MAX_REQUESTS_PER_HOUR` | No | Per-user hourly limit | `30` |
+| `COOLDOWN_SECONDS` | No | Cooldown after rate limit hit | `5` |
+| `TRUSTED_USER_MULTIPLIER` | No | Rate limit multiplier for trusted users | `2` |
+
+**See [SECURITY.md](SECURITY.md) for complete security documentation.**
 
 ### Conversation Settings
 
@@ -278,9 +305,18 @@ curl http://localhost:8080/health
 - ✅ Never commit `.env` file
 - ✅ Rotate API keys regularly
 - ✅ Use least-privilege Discord permissions
-- ✅ Enable rate limiting in production
-- ✅ Monitor for abuse
+- ✅ Configure `ADMIN_USER_IDS` with your Discord user ID
+- ✅ Enable whitelist mode for private bots (`WHITELIST_USER_IDS`)
+- ✅ Monitor rate limit logs for abuse patterns
+- ✅ Blacklist abusive users with `BLACKLIST_USER_IDS`
 - ✅ Keep dependencies updated
+
+**See [SECURITY.md](SECURITY.md) for comprehensive security documentation including:**
+- Input validation and sanitization
+- Per-user rate limiting configuration
+- Permission system (admin/trusted/whitelist/blacklist)
+- Spam and injection attack prevention
+- Security testing and monitoring
 
 ## 📈 Performance Tips
 

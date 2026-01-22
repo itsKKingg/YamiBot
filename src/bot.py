@@ -20,9 +20,12 @@ from .utils.config import Config
 from .utils.logger import setup_logging
 from .utils.logger import log_memory_status
 from .utils.error_handler import format_error_for_user, UserFriendlyError
+from .utils.input_validator import InputValidator
+from .utils.permissions import PermissionManager
 from .fallback_manager import FallbackManager
 from .rate_limiter import RateLimiter
 from .conversation_manager import ConversationManager
+from .message_validator import MessageValidator
 from .health_check import start_health_server, stop_health_server
 from .health_checker import HealthChecker
 
@@ -55,11 +58,13 @@ class YamiBot(commands.Bot):
         
         self.config = config
         self.fallback_manager = FallbackManager(config)
-        self.rate_limiter = RateLimiter()
+        self.rate_limiter = RateLimiter(config)
         self.conversation_manager = ConversationManager(
             max_history=config.max_conversation_history,
             context_timeout=config.conversation_timeout
         )
+        self.permission_manager = PermissionManager(config)
+        self.input_validator = InputValidator()
         
         # Resource management
         self.http_session: Optional[aiohttp.ClientSession] = None
@@ -229,40 +234,66 @@ class YamiBot(commands.Bot):
     
     async def on_message(self, message: discord.Message) -> None:
         """
-        Event handler for all messages
-        Handles @mentions and natural conversation
+        Event handler for all messages with comprehensive validation
+        Handles @mentions and natural conversation with security measures
         """
-        # Ignore messages from the bot itself
-        if message.author == self.user:
+        # ========== Step 1: Basic Message Validation ==========
+        should_process, reason = MessageValidator.should_process_message(message, self)
+        if not should_process:
+            logger.debug(f"Ignoring message: {reason}")
             return
         
-        # Ignore messages from other bots (optional)
-        if message.author.bot:
+        # ========== Step 2: Permission Check ==========
+        can_proceed, denial_reason = await MessageValidator.check_permissions(
+            message, self.permission_manager
+        )
+        if not can_proceed:
+            await message.reply(MessageValidator.format_validation_error(denial_reason))
+            logger.warning(f"Permission denied for {message.author} ({message.author.id}): {denial_reason}")
             return
         
-        # Check if bot is mentioned
-        if self.user not in message.mentions:
+        # ========== Step 3: Rate Limiting Check ==========
+        is_trusted = self.permission_manager.is_trusted(message.author.id)
+        can_request, rate_limit_reason = self.rate_limiter.can_user_request(
+            message.author.id, is_trusted=is_trusted
+        )
+        if not can_request:
+            await message.reply(MessageValidator.format_rate_limit_error(rate_limit_reason))
+            logger.info(f"Rate limit hit for {message.author} ({message.author.id}): {rate_limit_reason}")
             return
+        
+        # ========== Step 4: Extract and Validate Content ==========
+        content = MessageValidator.extract_message_content(message, self)
+        
+        # Validate content
+        is_valid, validation_error = self.input_validator.validate_message(content)
+        if not is_valid:
+            await message.reply(MessageValidator.format_validation_error(validation_error))
+            logger.info(f"Invalid input from {message.author} ({message.author.id}): {validation_error}")
+            return
+        
+        # Additional check for repeated characters (spam detection)
+        is_valid_repeat, repeat_error = self.input_validator.check_repeated_characters(content)
+        if not is_valid_repeat:
+            await message.reply(MessageValidator.format_validation_error(repeat_error))
+            logger.warning(f"Spam detected from {message.author} ({message.author.id}): {repeat_error}")
+            return
+        
+        # Sanitize content
+        content = self.input_validator.sanitize_message(content)
         
         # Get thread ID if message is in a thread
         thread_id = None
         if isinstance(message.channel, discord.Thread):
             thread_id = message.channel.id
         
+        # ========== Step 5: Process Request ==========
         try:
-            # Show typing indicator
             async with message.channel.typing():
-                # Extract the actual message content (remove bot mention)
-                content = message.content
-                for mention in message.mentions:
-                    content = content.replace(f'<@{mention.id}>', '').replace(f'<@!{mention.id}>', '')
-                content = content.strip()
-                
-                if not content:
-                    await message.reply("Hey! You mentioned me but didn't say anything. How can I help you?")
-                    return
-                
-                logger.info(f"Processing message from {message.author} in {message.channel}: {content[:100]}")
+                logger.info(
+                    f"Processing message from {message.author} ({message.author.id}) "
+                    f"[trusted={is_trusted}] in {message.channel}: {content[:100]}"
+                )
                 
                 # Add user message to conversation history
                 self.conversation_manager.add_message(
@@ -285,6 +316,9 @@ class YamiBot(commands.Bot):
                 )
                 
                 if response_text:
+                    # Validate and sanitize response
+                    response_text = self.input_validator.validate_response(response_text)
+                    
                     # Add assistant response to conversation history
                     self.conversation_manager.add_message(
                         channel_id=message.channel.id,
@@ -293,38 +327,34 @@ class YamiBot(commands.Bot):
                         thread_id=thread_id
                     )
                     
+                    # Record successful request for rate limiting
+                    self.rate_limiter.record_user_request(message.author.id)
+                    
                     # Track which provider was used
                     self.last_provider_used = metadata.get("provider", "unknown")
                     self.messages_processed += 1
                     
-                    # Split long responses if needed (Discord has 2000 char limit)
-                    if len(response_text) > 2000:
-                        # Split into chunks
-                        chunks = [response_text[i:i+2000] for i in range(0, len(response_text), 2000)]
-                        for i, chunk in enumerate(chunks):
-                            if i == 0:
-                                await message.reply(chunk)
-                            else:
-                                await message.channel.send(chunk)
-                    else:
-                        # Reply in thread
-                        await message.reply(response_text)
+                    # Send response (already truncated by validate_response if needed)
+                    await message.reply(response_text)
                     
                     # Log metadata
                     logger.info(
-                        f"Response sent via {metadata.get('provider')} "
+                        f"Response sent to {message.author} ({message.author.id}) "
+                        f"via {metadata.get('provider')} "
                         f"({metadata.get('total_tokens', 0)} tokens, "
-                        f"{metadata.get('response_time', 0):.2f}s)"
+                        f"{metadata.get('response_time', 0):.2f}s, "
+                        f"{len(response_text)} chars)"
                     )
                 else:
                     # All providers failed
                     error_msg = "😔 Sorry, I'm having trouble connecting to my AI services right now. Please try again in a moment."
                     await message.reply(error_msg)
-                    logger.error(f"All providers failed: {metadata.get('error')}")
+                    logger.error(f"All providers failed for {message.author.id}: {metadata.get('error')}")
         
         except Exception as e:
-            logger.error(f"Error processing message: {e}", exc_info=True)
-            await message.reply("❌ An error occurred while processing your message. Please try again.")
+            logger.error(f"Error processing message from {message.author.id}: {e}", exc_info=True)
+            error_msg = format_error_for_user(e)
+            await message.reply(f"❌ {error_msg}")
     
     async def on_error(self, event: str, *args, **kwargs) -> None:
         """
