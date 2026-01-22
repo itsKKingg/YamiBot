@@ -333,7 +333,6 @@ class CommandHandler:
         response = "📊 **Bot Status:**\n\n"
         response += f"⏱️ **Uptime:** {uptime}\n"
         response += f"🤖 **Active Provider:** {self.bot.last_provider_used or 'none'}\n"
-        response += f"🧠 **Model:** {self.bot.last_model_used or 'none'}\n"
         response += f"💬 **Messages Processed:** {self.bot.messages_processed}\n"
         response += f"🗂️ **Active Conversations:** {conv_stats['active_conversations']}\n"
         response += f"📝 **Total Messages in Memory:** {conv_stats['total_messages']}\n\n"

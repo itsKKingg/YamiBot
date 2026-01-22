@@ -33,11 +33,13 @@ class ConversationManager:
         self.context_timeout = context_timeout
         
         # Store conversations by thread_id or channel_id
-        # Format: {conversation_id: {"messages": [...], "last_updated": datetime, "created_at": datetime}}
+        # Format: {conversation_id: {"messages": [...], "last_updated": datetime, "created_at": datetime, "model_history": [...], "model_used": None}}
         self.conversations: Dict[int, Dict] = defaultdict(lambda: {
             "messages": [],
             "last_updated": datetime.utcnow(),
-            "created_at": datetime.utcnow()
+            "created_at": datetime.utcnow(),
+            "model_history": [],
+            "model_used": None
         })
         
         # Track active conversations
@@ -286,3 +288,110 @@ class ConversationManager:
                         await self.cleanup_old_conversations()
             
             self.last_memory_check = current_time
+
+    def add_model_response(
+        self,
+        channel_id: int,
+        model_provider: str,
+        model_name: str,
+        response_content: str,
+        thread_id: Optional[int] = None
+    ) -> None:
+        """
+        Track which model was used for a response in a conversation
+        
+        Args:
+            channel_id: Discord channel ID
+            model_provider: Provider name (e.g., "groq", "google")
+            model_name: Model name (e.g., "llama-3.1-70b")
+            response_content: The response content
+            thread_id: Discord thread ID (optional)
+        """
+        conversation_id = self._get_conversation_id(channel_id, thread_id)
+        
+        # Check if conversation has expired
+        if self._is_conversation_expired(conversation_id):
+            logger.info(f"Conversation {conversation_id} expired, clearing history")
+            self.clear_conversation(channel_id, thread_id)
+            return
+        
+        # Track model used
+        model_info = {
+            "provider": model_provider,
+            "model": model_name,
+            "timestamp": datetime.utcnow()
+        }
+        
+        self.conversations[conversation_id]["model_used"] = f"{model_provider}/{model_name}"
+        self.conversations[conversation_id]["model_history"].append(model_info)
+        
+        # Keep model history limited (same limit as messages)
+        if len(self.conversations[conversation_id]["model_history"]) > self.max_history:
+            self.conversations[conversation_id]["model_history"] = \
+                self.conversations[conversation_id]["model_history"][-self.max_history:]
+        
+        self.conversations[conversation_id]["last_updated"] = datetime.utcnow()
+        
+        logger.debug(f"Tracked model response: {model_provider}/{model_name} for conversation {conversation_id}")
+    
+    def get_conversation_model_stats(
+        self,
+        channel_id: int,
+        thread_id: Optional[int] = None
+    ) -> Dict[str, any]:
+        """
+        Get model usage statistics for a conversation
+        
+        Args:
+            channel_id: Discord channel ID
+            thread_id: Discord thread ID (optional)
+            
+        Returns:
+            Dictionary with model usage statistics
+        """
+        conversation_id = self._get_conversation_id(channel_id, thread_id)
+        
+        if conversation_id not in self.conversations:
+            return {
+                "current_model": None,
+                "model_count": 0,
+                "model_usage": {}
+            }
+        
+        conv = self.conversations[conversation_id]
+        model_history = conv.get("model_history", [])
+        
+        # Count model usage
+        model_usage = {}
+        for model_info in model_history:
+            model_key = f"{model_info['provider']}/{model_info['model']}"
+            model_usage[model_key] = model_usage.get(model_key, 0) + 1
+        
+        return {
+            "current_model": conv.get("model_used"),
+            "model_count": len(model_history),
+            "model_usage": model_usage,
+            "unique_models": len(model_usage)
+        }
+    
+    def get_last_used_model(
+        self,
+        channel_id: int,
+        thread_id: Optional[int] = None
+    ) -> Optional[str]:
+        """
+        Get last model used in a conversation
+        
+        Args:
+            channel_id: Discord channel ID
+            thread_id: Discord thread ID (optional)
+            
+        Returns:
+            Model identifier (provider/model) or None
+        """
+        conversation_id = self._get_conversation_id(channel_id, thread_id)
+        
+        if conversation_id not in self.conversations:
+            return None
+        
+        return self.conversations[conversation_id].get("model_used")

@@ -29,6 +29,10 @@ from .message_validator import MessageValidator
 from .health_check import start_health_server, stop_health_server
 from .health_checker import HealthChecker
 from .command_handler import setup_slash_commands, CommandHandler
+from .model_registry import ModelRegistry
+from .model_router import ModelRouter
+from .model_analytics import ModelAnalytics
+from .intent_detector import IntentDetector
 
 # Setup logging
 logger = setup_logging(__name__)
@@ -60,6 +64,13 @@ class YamiBot(commands.Bot):
         )
         
         self.config = config
+        
+        # Model management
+        self.model_registry = ModelRegistry()
+        self.model_router = None  # Will be initialized after fallback_manager
+        self.model_analytics = ModelAnalytics()
+        self.intent_detector = IntentDetector()
+        
         self.fallback_manager = FallbackManager(config)
         self.rate_limiter = RateLimiter(config)
         self.conversation_manager = ConversationManager(
@@ -78,6 +89,7 @@ class YamiBot(commands.Bot):
         # Bot status tracking
         self.start_time = None
         self.last_provider_used = None
+        self.last_model_used = None
         self.messages_processed = 0
 
         # Command handler
@@ -120,8 +132,18 @@ class YamiBot(commands.Bot):
 
         # Setup slash commands
         setup_slash_commands(self)
+        
+        # Initialize model router with fallback manager
+        self.model_router = ModelRouter(self.model_registry, self.fallback_manager)
+        self.fallback_manager.model_router = self.model_router
+        
+        # Start analytics logging task
+        analytics_task = asyncio.create_task(
+            self.model_analytics.start_periodic_logging(interval_seconds=600)
+        )
+        self.cleanup_tasks.append(analytics_task)
 
-        logger.info("Bot setup complete with resource management enabled")
+        logger.info("Bot setup complete with resource management and model routing enabled")
     
     async def _initialize_http_session(self):
         """Initialize shared aiohttp session with connection pooling"""
@@ -333,7 +355,22 @@ class YamiBot(commands.Bot):
                     thread_id=thread_id
                 )
                 
-                # Query AI with conversation context
+                # Detect intent for intelligent model selection
+                intent_result = self.intent_detector.classify_intent(content)
+                intent = intent_result.get("intent", "chat")
+                
+                # Extract model override if present
+                model_override = None
+                if self.model_router:
+                    model_override = self.model_router.extract_model_override(content)
+                
+                # Query AI with conversation context and intent-based routing
+                response_text, metadata = await self.fallback_manager.get_response(
+                    prompt=content,
+                    intent=intent,
+                    messages=conversation_history,
+                    model_override=model_override
+                )
                 response_text, metadata = await self.fallback_manager.query(
                     prompt=content,
                     messages=conversation_history

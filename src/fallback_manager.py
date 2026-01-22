@@ -35,12 +35,13 @@ class FallbackManager:
     Manages multiple AI providers with fallback capability
     """
     
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, model_router=None):
         """
         Initialize the fallback manager with configuration
         
         Args:
             config: Configuration object containing provider settings
+            model_router: Optional ModelRouter instance for intelligent routing
         """
         self.config = config
         self.providers: List[BaseProvider] = []
@@ -48,7 +49,9 @@ class FallbackManager:
         self.circuit_breakers: Dict[str, CircuitBreaker] = {}  # NEW: Circuit breakers for each provider
         self.last_fallback_reason: Optional[str] = None
         self.last_used_provider: Optional[str] = None
+        self.last_used_model: Optional[str] = None
         self.shared_session = None
+        self.model_router = model_router
         
         # Provider priority order (from highest to lowest)
         # Updated order: Cerebras → SambaNova → Groq → Mistral
@@ -263,6 +266,133 @@ class FallbackManager:
         
         logger.error(error_msg)
         return None, metadata
+    
+    async def get_response_with_routing(
+        self,
+        prompt: str,
+        intent: str,
+        messages: Optional[List[Dict[str, str]]] = None,
+        model_override: Optional[str] = None,
+        **kwargs
+    ) -> Tuple[Optional[str], Dict[str, Any]]:
+        """
+        Query AI providers with intelligent model routing based on intent
+        
+        Args:
+            prompt: The user's input prompt
+            intent: Detected intent type for model selection
+            messages: Optional conversation history for context
+            model_override: Optional user-specified model name
+            **kwargs: Additional arguments to pass to providers
+            
+        Returns:
+            Tuple containing:
+            - response text (or None if all providers failed)
+            - metadata dictionary with provider/model info, tokens, timing, etc.
+        """
+        start_time = time.time()
+        
+        # Select model using model router
+        if self.model_router:
+            selected_provider, selected_model, selection_reason = self.model_router.select_model(
+                intent=intent,
+                user_preference=model_override
+            )
+            
+            logger.info(
+                f"Model router selected: {selected_provider}/{selected_model} "
+                f"(intent={intent}, reason={selection_reason})"
+            )
+        else:
+            # Fallback to default provider if no router
+            selected_provider, selected_model, selection_reason = "groq", "mixtral-8x7b-32768", "no_router"
+            logger.warning("No model router configured, using default provider")
+        
+        # Get provider instance
+        provider = self._get_provider_by_name(selected_provider)
+        
+        if not provider:
+            logger.error(f"Provider {selected_provider} not available, falling back to default routing")
+            return await self.query(prompt, messages=messages, **kwargs)
+        
+        # Update provider's model if it supports it
+        original_model = provider.model
+        provider.model = selected_model
+        
+        # Try the selected provider with fallback to next best models
+        try:
+            response, metadata = await self.query(prompt, messages=messages, **kwargs)
+            
+            # Update metadata with routing information
+            metadata.update({
+                "selected_provider": selected_provider,
+                "selected_model": selected_model,
+                "selection_reason": selection_reason,
+                "intent": intent,
+                "model_override": model_override
+            })
+            
+            # Track which model was actually used
+            actual_provider = metadata.get("provider", selected_provider)
+            if actual_provider == selected_provider:
+                self.last_used_model = selected_model
+            
+            return response, metadata
+            
+        finally:
+            # Restore original model
+            provider.model = original_model
+    
+    def _get_provider_by_name(self, provider_name: str) -> Optional[BaseProvider]:
+        """
+        Get a provider instance by name
+        
+        Args:
+            provider_name: Name of the provider
+            
+        Returns:
+            Provider instance or None if not found
+        """
+        provider_name_lower = provider_name.lower().strip()
+        
+        for provider in self.providers:
+            if provider.name.lower() == provider_name_lower:
+                return provider
+        
+        return None
+    
+    async def get_response(
+        self,
+        prompt: str,
+        intent: Optional[str] = None,
+        model_override: Optional[str] = None,
+        **kwargs
+    ) -> Tuple[Optional[str], Dict[str, Any]]:
+        """
+        Query AI providers with optional model routing
+        
+        Args:
+            prompt: The user's input prompt
+            intent: Optional detected intent type for model selection
+            model_override: Optional user-specified model name
+            **kwargs: Additional arguments to pass to providers
+            
+        Returns:
+            Tuple containing:
+            - response text (or None if all providers failed)
+            - metadata dictionary with provider/model info, tokens, timing, etc.
+        """
+        # If intent and model_router are available, use intelligent routing
+        if intent and self.model_router and (model_override or intent != "chat"):
+            return await self.get_response_with_routing(
+                prompt=prompt,
+                intent=intent,
+                model_override=model_override,
+                **kwargs
+            )
+        
+        # Otherwise use standard fallback behavior
+        return await self.query(prompt, **kwargs)
     
     def get_provider_status(self) -> Dict[str, Any]:
         """
