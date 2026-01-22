@@ -30,6 +30,8 @@ class Config:
         self.sambanova_api_key = self._get_env("SAMBANOVA_API_KEY")
         self.groq_api_key = self._get_env("GROQ_API_KEY")
         self.mistral_api_key = self._get_env("MISTRAL_API_KEY")
+        self.google_api_key = self._get_env("GOOGLE_API_KEY")
+        self.google_model = self._get_env("GOOGLE_MODEL", default="gemini-2.0-flash")
         
         # Bot configuration
         self.bot_prefix = self._get_env("BOT_PREFIX", default="!")
@@ -49,7 +51,8 @@ class Config:
             'cerebras': int(self._get_env("CEREBRAS_TIMEOUT", default="120")),      # 2 minutes
             'sambanova': int(self._get_env("SAMBANOVA_TIMEOUT", default="120")),    # 2 minutes
             'groq': int(self._get_env("GROQ_TIMEOUT", default="90")),              # 90 seconds
-            'mistral': int(self._get_env("MISTRAL_TIMEOUT", default="60"))          # 60 seconds
+            'mistral': int(self._get_env("MISTRAL_TIMEOUT", default="60")),       # 60 seconds
+            'google': int(self._get_env("GOOGLE_TIMEOUT", default="120"))         # 2 minutes
         }
         
         # Permission & Security settings
@@ -105,7 +108,8 @@ class Config:
             "CEREBRAS_API_KEY": self.cerebras_api_key,
             "SAMBANOVA_API_KEY": self.sambanova_api_key,
             "GROQ_API_KEY": self.groq_api_key,
-            "MISTRAL_API_KEY": self.mistral_api_key
+            "MISTRAL_API_KEY": self.mistral_api_key,
+            "GOOGLE_API_KEY": self.google_api_key
         }
         
         missing_providers = []
@@ -119,7 +123,7 @@ class Config:
         
         # At least one provider API key must be present
         if not available_providers:
-            error_msg = "No provider API keys configured. At least one provider is required: CEREBRAS_API_KEY, SAMBANOVA_API_KEY, GROQ_API_KEY, or MISTRAL_API_KEY"
+            error_msg = "No provider API keys configured. At least one provider is required: CEREBRAS_API_KEY, SAMBANOVA_API_KEY, GROQ_API_KEY, MISTRAL_API_KEY, or GOOGLE_API_KEY"
             logger.error(error_msg)
             raise ValueError(error_msg)
         
@@ -154,6 +158,7 @@ class Config:
                 "cerebras": bool(self.cerebras_api_key),
                 "sambanova": bool(self.sambanova_api_key),
                 "groq": bool(self.groq_api_key),
-                "mistral": bool(self.mistral_api_key)
+                "mistral": bool(self.mistral_api_key),
+                "google": bool(self.google_api_key)
             }
         }

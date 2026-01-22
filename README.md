@@ -26,6 +26,48 @@ A production-ready AI Discord bot that responds naturally to @mentions with inte
 2. **SambaNova** (Backup) - `gpt-oss-120b`
 3. **Groq** (Fallback) - `openai/gpt-oss-120b`
 4. **Mistral** (Safety) - `mistral-small-latest`
+5. **Google Gemini** (Latest) - `gemini-2.0-flash`, `gemini-1.5-pro`, `gemini-1.5-flash`
+
+### Natural Language Commands & Slash Commands
+
+The bot supports both natural language commands and traditional slash commands for power users.
+
+#### Natural Language Commands
+
+Simply @mention the bot with natural language:
+
+```
+@YamiBot clear my memory              # Clear conversation
+@YamiBot what do you remember         # View conversation history
+@YamiBot search for quantum physics    # Search with Google Gemini
+@YamiBot use model gemini-1.5-pro     # Switch AI model
+@YamiBot available models              # List all models
+@YamiBot how are you                   # Bot status
+@YamiBot forget last 3 messages        # Clear specific messages
+@YamiBot remember that I prefer short answers  # Set preference
+```
+
+#### Slash Commands
+
+Power users can use slash commands for quick access:
+
+- `/status` - Show bot uptime, current model, memory usage, API provider health
+- `/forget` - Trigger memory clear confirmation
+- `/model <model_name>` - Switch to specific model
+- `/models` - List all available models with descriptions
+- `/stats` - Show conversation stats (messages processed, tokens used, model usage)
+
+#### Reaction Confirmation
+
+Destructive actions (like clearing memory) require confirmation:
+
+```
+User: @YamiBot clear my memory
+Bot: Are you sure? React with ✅ to confirm or ❌ to cancel
+    - User reacts ✅ → Memory cleared
+    - User reacts ❌ → Cancelled
+    - No reaction → Timeout (30 seconds)
+```
 
 ## 🚀 Quick Start
 
@@ -102,6 +144,12 @@ docker run --env-file .env yamibot
 1. Sign up at [Mistral AI Console](https://console.mistral.ai/)
 2. Navigate to API keys
 3. Generate a new key
+
+### Google Gemini API Key
+1. Sign up at [Google AI Studio](https://makersuite.google.com/app/apikey)
+2. Create a new project or select existing
+3. Generate an API key
+4. Note: You may need to enable to Generative Language API
 
 ## 💬 Using the Bot
 
@@ -185,6 +233,7 @@ YamiBot/
 | `SAMBANOVA_API_KEY` | Yes | SambaNova API key | - |
 | `GROQ_API_KEY` | Yes | Groq API key | - |
 | `MISTRAL_API_KEY` | Yes | Mistral API key | - |
+| `GOOGLE_API_KEY` | No | Google Gemini API key | - |
 | `BOT_PREFIX` | No | Command prefix (not used in MVP) | `!` |
 | `SYNC_COMMANDS` | No | Sync slash commands (not used) | `false` |
 | `DEBUG_MODE` | No | Enable debug logging | `false` |
@@ -217,6 +266,26 @@ YamiBot/
 - Minimum: 300 (5 minutes)
 - Maximum: 86400 (24 hours)
 - Recommended: 3600 (1 hour) for active conversations
+
+### Memory Management
+
+The bot includes automatic memory management features:
+
+**Automatic Cleanup:**
+- Conversations expire after timeout (default: 1 hour)
+- Periodic cleanup runs every 5 minutes by default
+- Memory usage is monitored to prevent leaks
+
+**Manual Memory Control:**
+- Use natural language: "clear my memory" to reset conversation
+- Use "forget last N messages" to remove specific messages
+- Use "what do you remember" to view current memory
+- All destructive actions require reaction confirmation
+
+**Message Tracking:**
+- Deleted messages are automatically removed from context
+- Edited messages update the conversation context
+- Thread conversations are tracked separately from channel conversations
 
 ## 🚢 Deployment
 
