@@ -28,6 +28,7 @@ from .conversation_manager import ConversationManager
 from .message_validator import MessageValidator
 from .health_check import start_health_server, stop_health_server
 from .health_checker import HealthChecker
+from .command_handler import setup_slash_commands, CommandHandler
 
 # Setup logging
 logger = setup_logging(__name__)
@@ -49,6 +50,8 @@ class YamiBot(commands.Bot):
         intents.message_content = True
         intents.guilds = True
         intents.members = True
+        intents.reactions = True  # For reaction confirmation system
+        intents.integrations = True  # For slash commands
         
         super().__init__(
             command_prefix=commands.when_mentioned,
@@ -76,6 +79,9 @@ class YamiBot(commands.Bot):
         self.start_time = None
         self.last_provider_used = None
         self.messages_processed = 0
+
+        # Command handler
+        self.command_handler = None
         
         # Log initial memory status
         self.start_memory = log_memory_status()
@@ -108,7 +114,13 @@ class YamiBot(commands.Bot):
         # Start memory monitoring task
         memory_task = asyncio.create_task(self._monitor_memory())
         self.cleanup_tasks.append(memory_task)
-        
+
+        # Initialize command handler
+        self.command_handler = CommandHandler(self)
+
+        # Setup slash commands
+        setup_slash_commands(self)
+
         logger.info("Bot setup complete with resource management enabled")
     
     async def _initialize_http_session(self):
@@ -281,13 +293,25 @@ class YamiBot(commands.Bot):
         
         # Sanitize content
         content = self.input_validator.sanitize_message(content)
-        
+
         # Get thread ID if message is in a thread
         thread_id = None
         if isinstance(message.channel, discord.Thread):
             thread_id = message.channel.id
-        
-        # ========== Step 5: Process Request ==========
+
+        # ========== Step 5: Check for Commands ==========
+        # Check if message contains a command (natural language)
+        if self.command_handler:
+            try:
+                is_command = await self.command_handler.handle_message(message)
+                if is_command:
+                    # Message was a command, don't process as regular chat
+                    return
+            except Exception as e:
+                logger.error(f"Error in command handler: {e}", exc_info=True)
+                # Continue with normal processing if command handler fails
+
+        # ========== Step 6: Process Request ==========
         try:
             async with message.channel.typing():
                 logger.info(
@@ -361,7 +385,97 @@ class YamiBot(commands.Bot):
         Global error handler for bot events
         """
         logger.error(f"Error in event {event}", exc_info=True)
-    
+
+    async def on_message_delete(self, message: discord.Message) -> None:
+        """
+        Event handler for message deletion
+        Removes deleted messages from conversation context
+        """
+        # Ignore bot's own messages
+        if message.author == self.user:
+            return
+
+        # Ignore messages from other bots
+        if message.author.bot:
+            return
+
+        # Get thread ID if applicable
+        thread_id = None
+        if isinstance(message.channel, discord.Thread):
+            thread_id = message.channel.id
+
+        # Get conversation ID
+        conversation_id = self.conversation_manager._get_conversation_id(message.channel.id, thread_id)
+
+        # Check if conversation exists
+        if conversation_id not in self.conversation_manager.conversations:
+            return
+
+        # Try to find and remove the message
+        messages = self.conversation_manager.conversations[conversation_id]["messages"]
+        initial_count = len(messages)
+
+        # Remove messages matching the deleted message's content and timestamp
+        # We compare content since we don't store Discord message IDs in conversation history
+        self.conversation_manager.conversations[conversation_id]["messages"] = [
+            msg for msg in messages
+            if not (
+                msg["content"] == message.content and
+                abs((msg["timestamp"] - message.created_at).total_seconds()) < 60
+            )
+        ]
+
+        # Log if a message was removed
+        if len(self.conversation_manager.conversations[conversation_id]["messages"]) < initial_count:
+            removed_count = initial_count - len(self.conversation_manager.conversations[conversation_id]["messages"])
+            logger.info(f"Removed {removed_count} message(s) from conversation {conversation_id} due to deletion")
+        else:
+            logger.debug(f"Message not found in conversation context (may have already expired)")
+
+    async def on_message_edit(self, before: discord.Message, after: discord.Message) -> None:
+        """
+        Event handler for message edits
+        Updates message in conversation context
+        """
+        # Ignore bot's own messages
+        if after.author == self.user:
+            return
+
+        # Ignore messages from other bots
+        if after.author.bot:
+            return
+
+        # Only process if content actually changed
+        if before.content == after.content:
+            return
+
+        # Get thread ID if applicable
+        thread_id = None
+        if isinstance(after.channel, discord.Thread):
+            thread_id = after.channel.id
+
+        # Get conversation ID
+        conversation_id = self.conversation_manager._get_conversation_id(after.channel.id, thread_id)
+
+        # Check if conversation exists
+        if conversation_id not in self.conversation_manager.conversations:
+            return
+
+        # Try to find and update the message
+        messages = self.conversation_manager.conversations[conversation_id]["messages"]
+
+        for msg in messages:
+            # Find message matching old content and timestamp
+            if msg["content"] == before.content and abs((msg["timestamp"] - after.created_at).total_seconds()) < 60:
+                # Update the message with new content and timestamp
+                msg["content"] = after.content
+                msg["timestamp"] = after.edited_at if after.edited_at else discord.utils.utcnow()
+                logger.info(f"Updated message in conversation {conversation_id} due to edit")
+                return
+
+        # If we get here, message wasn't found in context
+        logger.debug(f"Edited message not found in conversation context (may have already expired)")
+
     async def close(self) -> None:
         """
         Cleanup when bot is shutting down

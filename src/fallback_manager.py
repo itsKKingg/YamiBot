@@ -79,13 +79,15 @@ class FallbackManager:
         from .providers.sambanova_provider import SambanovaProvider
         from .providers.groq_provider import GroqProvider
         from .providers.mistral_provider import MistralProvider
-        
-        # Provider classes in priority order: Cerebras → SambaNova → Groq → Mistral
+        from .providers.google_provider import GoogleProvider
+
+        # Provider classes in priority order: Cerebras → SambaNova → Groq → Mistral → Google
         provider_classes = [
             ("cerebras", CerebrasProvider),
             ("sambanova", SambanovaProvider),
             ("groq", GroqProvider),
-            ("mistral", MistralProvider)
+            ("mistral", MistralProvider),
+            ("google", GoogleProvider)
         ]
         
         # Initialize each provider individually with graceful error handling
