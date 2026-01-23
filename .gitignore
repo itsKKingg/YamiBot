@@ -29,15 +29,11 @@ build/
 dist/
 *.egg-info/
 
-# Docker
-.dockerignore
-
 # Test
 .test/
-tests/
+tests/test_output*.py
 coverage/
 *.cover
-test_*.py
 
 # Local development
 *.local

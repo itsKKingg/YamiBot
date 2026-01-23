@@ -404,17 +404,13 @@ class YamiBot(commands.Bot):
                 model_override = None
                 if self.model_router:
                     model_override = self.model_router.extract_model_override(content)
-                
+
                 # Query AI with conversation context and intent-based routing
-                response_text, metadata = await self.fallback_manager.get_response(
+                response_text, metadata = await self.fallback_manager.get_response_with_routing(
                     prompt=content,
                     intent=intent,
                     messages=conversation_history,
                     model_override=model_override
-                )
-                response_text, metadata = await self.fallback_manager.query(
-                    prompt=content,
-                    messages=conversation_history
                 )
                 
                 if response_text:
