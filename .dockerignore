@@ -1,0 +1,80 @@
+# YamiBot Docker Context Ignore
+# Reduces build context size and security
+
+# Environment files (secrets)
+.env
+.env.local
+.env.*.local
+
+# Git
+.git
+.gitignore
+.github
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyo
+*.pyd
+.Python
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Logs
+logs/
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.sublime-*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Test coverage
+.coverage
+.pytest_cache/
+htmlcov/
+.tox/
+.hypothesis/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Temporary files
+*.tmp
+*.bak
+*.backup
+
+# Documentation files (not needed in container)
+*.md
+docs/
+SECURITY_*.md
+BUG_*.md
+IMPROVEMENTS.md
+IMPLEMENTATION*.md
+DEPLOYMENT_*.md
+VERIFICATION.md
+CHANGELOG.md
+CHANGES.md
+
+# Scripts (not needed in container)
+repo_cleanup.sh
+test_basic.py
+
+# CI/CD
+.gitlab-ci.yml
+.travis.yml
+.github/
