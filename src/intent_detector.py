@@ -141,6 +141,65 @@ class IntentDetector:
             ],
             "confidence": 0.9,
             "extract_param": True
+        },
+        "music_lyrics": {
+            "keywords": [
+                "lyrics", "lyric", "words to", "what are the lyrics",
+                "show me lyrics", "get lyrics", "find lyrics"
+            ],
+            "patterns": [
+                r"lyrics?\s+(?:for\s+)?(.+)",
+                r"words?\s+to\s+(.+)",
+                r"what\s+are\s+the\s+lyrics?\s+for\s+(.+)"
+            ],
+            "confidence": 0.85,
+            "extract_param": True
+        },
+        "music_search": {
+            "keywords": [
+                "find song", "search for song", "what song", "play",
+                "embed", "soundcloud", "find music", "search music"
+            ],
+            "patterns": [
+                r"find\s+(?:a\s+)?song\s+(?:by\s+)?(.+)",
+                r"search\s+(?:for\s+)?(?:a\s+)?song\s+(?:by\s+)?(.+)",
+                r"what(?:'s|s)?\s+the\s+song\s+(?:that\s+goes\s+)?(.+)",
+                r"play\s+(.+)",
+                r"embed\s+(.+)",
+                r"soundcloud\s+(.+)",
+                r"find\s+music\s+(.+)",
+                r"search\s+music\s+(.+)"
+            ],
+            "confidence": 0.8,
+            "extract_param": True
+        },
+        "music_artist": {
+            "keywords": [
+                "tell me about", "who is", "artist", "singer", "rapper",
+                "musician", "band", "artist info", "artist bio"
+            ],
+            "patterns": [
+                r"tell\s+me\s+about\s+(.+)",
+                r"who\s+is\s+(.+)",
+                r"artist\s+info\s+for\s+(.+)",
+                r"artist\s+bio\s+for\s+(.+)"
+            ],
+            "confidence": 0.85,
+            "extract_param": True
+        },
+        "music_annotation": {
+            "keywords": [
+                "what does", "meaning of", "explain", "annotation",
+                "what's the meaning", "interpretation"
+            ],
+            "patterns": [
+                r"what\s+does\s+(.+)\s+mean",
+                r"meaning\s+of\s+(.+)",
+                r"explain\s+(.+)",
+                r"what(?:'s|s)\s+the\s+meaning\s+of\s+(.+)"
+            ],
+            "confidence": 0.8,
+            "extract_param": True
         }
     }
 
@@ -157,6 +216,7 @@ class IntentDetector:
             - intent: The detected intent (or "chat" if no special intent)
             - confidence: Confidence score (0-1)
             - params: Extracted parameters (if any)
+            - api_source: Recommended API source (music intents only)
         """
         message_lower = message.lower().strip()
 
@@ -188,19 +248,68 @@ class IntentDetector:
                 if intent_data.get("extract_param", False) and matched_pattern:
                     params = IntentDetector._extract_parameters(message_lower, intent_name, matched_pattern)
 
-                logger.debug(f"Detected intent: {intent_name} (confidence: {confidence})")
+                # Determine API source for music intents
+                api_source = None
+                if intent_name.startswith("music_"):
+                    api_source = IntentDetector.determine_api_source(message_lower)
+
+                logger.debug(f"Detected intent: {intent_name} (confidence: {confidence}, api_source: {api_source})")
                 return {
                     "intent": intent_name,
                     "confidence": confidence,
-                    "params": params
+                    "params": params,
+                    "api_source": api_source
                 }
 
         # No special intent detected - default to chat
         return {
             "intent": "chat",
             "confidence": 1.0,
-            "params": {}
+            "params": {},
+            "api_source": None
         }
+
+    @staticmethod
+    def determine_api_source(message: str) -> Optional[str]:
+        """
+        Determine which API to use based on message content.
+
+        API Priority Logic:
+        - If "Juice WRLD" mentioned → "juice_wrld" (primary)
+        - If "genius" explicitly mentioned → "genius"
+        - If "lyrics" without "Juice WRLD" → "genius"
+        - If "embed", "soundcloud", or "play" → "soundcloud"
+        - Otherwise → None (use default routing)
+
+        Args:
+            message: The user's message (lowercase)
+
+        Returns:
+            API source: "juice_wrld", "genius", "soundcloud", or None
+        """
+        # Priority 1: Juice WRLD mentioned - always use Juice WRLD API
+        if "juice wrld" in message or "juicewrld" in message:
+            logger.debug("API source: juice_wrld (Juice WRLD detected)")
+            return "juice_wrld"
+
+        # Priority 2: Explicit Genius request
+        if "genius" in message:
+            logger.debug("API source: genius (explicitly requested)")
+            return "genius"
+
+        # Priority 3: Audio/embed requests - SoundCloud
+        if any(keyword in message for keyword in ["embed", "soundcloud", "play this"]):
+            logger.debug("API source: soundcloud (audio/embed request)")
+            return "soundcloud"
+
+        # Priority 4: Lyrics requests - Genius (non-Juice WRLD)
+        if "lyrics" in message:
+            logger.debug("API source: genius (lyrics request)")
+            return "genius"
+
+        # No specific API determined
+        logger.debug("API source: None (use default routing)")
+        return None
 
     @staticmethod
     def _extract_parameters(message: str, intent: str, pattern: str) -> Dict[str, any]:
