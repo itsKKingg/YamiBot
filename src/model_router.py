@@ -22,76 +22,83 @@ class ModelRouter:
     
     # Intent to model mapping (in priority order)
     INTENT_MODEL_MAPPING: Dict[str, List[Tuple[str, str]]] = {
+        # ===== Task B: Base Intent Routing =====
         "coding": [
             ("cerebras", "gpt-oss-120b"),
             ("groq", "llama-3.1-405b"),
             ("groq", "llama-3.1-70b"),
-            ("sambanova", "gpt-oss-120b")
         ],
         "search": [
             ("google", "gemini-2.0-flash"),
             ("google", "gemini-1.5-pro"),
-            ("google", "gemini-1.5-flash")
+            ("google", "gemini-1.5-flash"),
         ],
         "image_analysis": [
             ("google", "gemini-1.5-pro"),
-            ("google", "gemini-2.0-flash")
+            ("google", "gemini-2.0-flash"),
         ],
         "creative": [
             ("mistral", "mistral-large-2411"),
             ("mistral", "mistral-medium"),
-            ("groq", "mixtral-8x7b-32768")
         ],
         "math_logic": [
             ("groq", "llama-3.1-405b"),
             ("cerebras", "gpt-oss-120b"),
-            ("google", "gemini-1.5-pro"),
-            ("groq", "llama-3.1-70b")
         ],
         "reasoning": [
             ("google", "gemini-1.5-pro"),
             ("groq", "llama-3.1-405b"),
             ("cerebras", "gpt-oss-120b"),
-            ("mistral", "mistral-large-2411")
         ],
         "fast": [
             ("groq", "mixtral-8x7b-32768"),
             ("groq", "llama-3.1-8b"),
             ("mistral", "mistral-small"),
-            ("google", "gemini-1.5-flash")
         ],
         "general": [
             ("groq", "mixtral-8x7b-32768"),
             ("mistral", "mistral-medium"),
             ("cerebras", "gpt-oss-120b"),
-            ("google", "gemini-1.5-flash")
         ],
         "chat": [
             ("groq", "mixtral-8x7b-32768"),
             ("mistral", "mistral-medium"),
-            ("cerebras", "gpt-oss-120b")
+            ("cerebras", "gpt-oss-120b"),
         ],
-        # Music intents - Genius API uses context-aware models
-        "music_lyrics": [
-            ("google", "gemini-1.5-pro"),
-            ("mistral", "mistral-large-2411"),
-            ("google", "gemini-2.0-flash")
-        ],
+
+        # ===== Task D: Music Intent Routing =====
         "music_search": [
             ("google", "gemini-2.0-flash"),
-            ("google", "gemini-1.5-flash"),
-            ("mistral", "mistral-medium")
+            ("mistral", "mistral-medium"),
+        ],
+        "music_lyrics": [
+            ("google", "gemini-1.5-pro"),
+            ("groq", "llama-3.1-70b"),
         ],
         "music_artist": [
             ("google", "gemini-1.5-pro"),
             ("mistral", "mistral-large-2411"),
-            ("google", "gemini-2.0-flash")
         ],
-        "music_annotation": [
+        "music_discography": [
+            ("google", "gemini-2.0-flash"),
+            ("groq", "mixtral-8x7b-32768"),
+        ],
+        "music_features": [
+            ("groq", "mixtral-8x7b-32768"),
+            ("groq", "llama-3.1-70b"),
+        ],
+        "music_lyrics_genius": [
             ("google", "gemini-1.5-pro"),
             ("mistral", "mistral-large-2411"),
-            ("google", "gemini-2.0-flash")
-        ]
+        ],
+        "music_artist_genius": [
+            ("google", "gemini-1.5-pro"),
+            ("mistral", "mistral-large-2411"),
+        ],
+        "music_soundcloud": [
+            ("google", "gemini-2.0-flash"),
+            ("mistral", "mistral-medium"),
+        ],
     }
     
     def __init__(self, model_registry: ModelRegistry, fallback_manager=None):

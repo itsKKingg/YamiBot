@@ -1,37 +1,41 @@
 """
-Formatting module for YamiBot response formatting.
+Formatting module for YamiBot
 
-Provides formatters for music data, AI responses, and Discord-compatible output.
+This module contains formatters for various response types.
 """
 
 from .music_formatter import (
-    # Task A: Juice WRLD formatters
     format_song_card,
     format_song_list,
     format_artist_card,
     format_album_card,
     format_discography,
     truncate_for_discord,
-    # Task D: Genius formatters
+    format_artist_search_results,
+    format_album_search_results,
+    format_featured_songs,
+    # Keep existing exports for backwards compatibility
     format_lyrics_card,
     format_artist_bio,
     format_annotation,
-    # Task D: SoundCloud formatters
     format_soundcloud_embed,
     format_soundcloud_artist,
     format_soundcloud_playlist,
     create_discord_embed,
+    create_discord_genius_embed
 )
 
 __all__ = [
-    # Task A
     "format_song_card",
     "format_song_list",
     "format_artist_card",
     "format_album_card",
     "format_discography",
     "truncate_for_discord",
-    # Task D
+    "format_artist_search_results",
+    "format_album_search_results",
+    "format_featured_songs",
+    # Existing exports
     "format_lyrics_card",
     "format_artist_bio",
     "format_annotation",
@@ -39,4 +43,5 @@ __all__ = [
     "format_soundcloud_artist",
     "format_soundcloud_playlist",
     "create_discord_embed",
+    "create_discord_genius_embed"
 ]
