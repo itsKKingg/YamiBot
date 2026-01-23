@@ -14,6 +14,12 @@ import asyncio
 from .utils.logger import setup_logging
 from .intent_detector import IntentDetector
 from .message_validator import MessageValidator
+from .formatting.music_formatter import (
+    format_song_card,
+    format_song_list,
+    format_artist_info,
+    create_discord_juice_wrld_embed
+)
 
 logger = setup_logging(__name__)
 
@@ -501,14 +507,43 @@ class CommandHandler:
                 # api_source is one of: "juice_wrld", "genius", "soundcloud", or None
 
                 if api_source == "juice_wrld":
-                    # Use Juice WRLD API (to be implemented in separate task)
-                    await message.reply(
-                        "🎤 **Juice WRLD Lyrics Requested**\n\n"
-                        f"Searching for: {query}\n\n"
-                        "⚠️ Juice WRLD API integration coming soon. "
-                        "For now, I'll try to find lyrics through Genius."
-                    )
-                    # Fall through to Genius
+                    # Use Juice WRLD API
+                    if not hasattr(self.bot, 'juice_wrld_api') or self.bot.juice_wrld_api is None:
+                        await message.reply("⚠️ Juice WRLD API is not configured. Falling back to Genius.")
+                        # Fall through to Genius
+                    else:
+                        try:
+                            # Search for songs
+                            logger.info(f"Searching Juice WRLD API for: {query} by user {message.author.id}")
+                            songs = await self.bot.juice_wrld_api.search_songs(query, limit=3)
+
+                            if not songs:
+                                await message.reply(f"❌ No Juice WRLD songs found for: {query}\n\nTrying Genius instead...")
+                                # Fall through to Genius
+                            elif len(songs) > 0:
+                                # Get the first matching song with full details
+                                song_id = songs[0].get('id')
+                                if song_id:
+                                    song = await self.bot.juice_wrld_api.get_song(song_id)
+
+                                    # Format response using Discord embed
+                                    embed = create_discord_juice_wrld_embed(song=song)
+                                    await message.reply(embed=embed)
+
+                                    logger.info(f"Juice WRLD lyrics retrieved for: {query} by user {message.author.id}")
+                                    return  # Successfully handled, don't fall through
+                                else:
+                                    await message.reply("❌ Could not retrieve Juice WRLD song details. Trying Genius...")
+                                    # Fall through to Genius
+                            else:
+                                # Should not reach here but fall through to be safe
+                                await message.reply("❌ Could not retrieve Juice WRLD song details.")
+                                # Fall through to Genius
+
+                        except Exception as e:
+                            logger.error(f"Error retrieving from Juice WRLD API: {e}", exc_info=True)
+                            await message.reply(f"⚠️ Juice WRLD API error. Falling back to Genius...")
+                            # Fall through to Genius
 
                 if api_source == "genius" or api_source is None:
                     # Use Genius API
@@ -600,6 +635,25 @@ class CommandHandler:
                     else:
                         await message.reply("❌ Could not retrieve track details")
 
+                elif api_source == "juice_wrld":
+                    # Use Juice WRLD API for general music search
+                    if not hasattr(self.bot, 'juice_wrld_api') or self.bot.juice_wrld_api is None:
+                        await message.reply("❌ Juice WRLD API is not configured")
+                        return
+
+                    # Search for songs
+                    logger.info(f"Searching Juice WRLD API for: {query} by user {message.author.id}")
+                    songs = await self.bot.juice_wrld_api.search_songs(query, limit=5)
+
+                    if not songs:
+                        await message.reply(f"❌ No Juice WRLD songs found for: {query}")
+                        return
+
+                    # Format response using the song list formatter
+                    response = format_song_list(songs)
+                    await message.reply(response)
+                    logger.info(f"Juice WRLD search performed for: {query} by user {message.author.id}")
+
                 elif api_source == "genius" or api_source is None:
                     # Use Genius for general music search
                     if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
@@ -654,32 +708,60 @@ class CommandHandler:
 
         try:
             async with message.channel.typing():
-                # Use Genius API for artist info (primary choice)
-                if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
-                    await message.reply("❌ Genius API is not configured")
-                    return
+                # Use Juice WRLD API for artist info if requested
+                if api_source == "juice_wrld":
+                    if not hasattr(self.bot, 'juice_wrld_api') or self.bot.juice_wrld_api is None:
+                        await message.reply("❌ Juice WRLD API is not configured")
+                        return
 
-                # Search for artist
-                artists = await self.bot.genius_api.search_artists(query, limit=1)
+                    # Search for artist (assuming the API has search_artists method)
+                    logger.info(f"Searching Juice WRLD API for artist: {query} by user {message.author.id}")
+                    artists = await self.bot.juice_wrld_api.search_artists(query, limit=1)
 
-                if not artists:
-                    await message.reply(f"❌ No artist found for: {query}")
-                    return
+                    if not artists:
+                        await message.reply(f"❌ No Juice WRLD artist found for: {query}")
+                        return
 
-                # Get artist details
-                artist_id = artists[0].get('id')
-                if artist_id:
-                    artist = await self.bot.genius_api.get_artist(artist_id)
+                    # Get artist details
+                    artist_id = artists[0].get('id')
+                    if artist_id:
+                        artist = await self.bot.juice_wrld_api.get_artist(artist_id)
 
-                    # Format as Discord embed
-                    from ..formatting.music_formatter import create_discord_genius_embed
+                        # Format response using Discord embed
+                        embed = create_discord_juice_wrld_embed(artist=artist)
+                        await message.reply(embed=embed)
 
-                    embed = create_discord_genius_embed(artist=artist)
-                    await message.reply(embed=embed)
+                        logger.info(f"Juice WRLD artist info retrieved for: {query} by user {message.author.id}")
+                    else:
+                        await message.reply("❌ Could not retrieve Juice WRLD artist details")
 
-                    logger.info(f"Genius artist info retrieved for: {query} by user {message.author.id}")
                 else:
-                    await message.reply("❌ Could not retrieve artist details")
+                    # Fall back to Genius API for artist info (default choice)
+                    if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
+                        await message.reply("❌ Genius API is not configured")
+                        return
+
+                    # Search for artist
+                    artists = await self.bot.genius_api.search_artists(query, limit=1)
+
+                    if not artists:
+                        await message.reply(f"❌ No artist found for: {query}")
+                        return
+
+                    # Get artist details
+                    artist_id = artists[0].get('id')
+                    if artist_id:
+                        artist = await self.bot.genius_api.get_artist(artist_id)
+
+                        # Format as Discord embed
+                        from ..formatting.music_formatter import create_discord_genius_embed
+
+                        embed = create_discord_genius_embed(artist=artist)
+                        await message.reply(embed=embed)
+
+                        logger.info(f"Genius artist info retrieved for: {query} by user {message.author.id}")
+                    else:
+                        await message.reply("❌ Could not retrieve artist details")
 
         except Exception as e:
             logger.error(f"Error handling artist request: {e}", exc_info=True)
@@ -705,7 +787,33 @@ class CommandHandler:
 
         try:
             async with message.channel.typing():
-                # Use Genius API for annotations
+                # Check if Juice WRLD API should be used
+                if api_source == "juice_wrld":
+                    if hasattr(self.bot, 'juice_wrld_api') and self.bot.juice_wrld_api is not None:
+                        try:
+                            # Try Juice WRLD API first
+                            logger.info(f"Searching Juice WRLD API for annotations: {query} by user {message.author.id}")
+                            songs = await self.bot.juice_wrld_api.search_songs(query, limit=3)
+
+                            if songs and len(songs) > 0:
+                                song_id = songs[0].get('id')
+                                if song_id:
+                                    # Get song details using Juice WRLD formatter
+                                    song = await self.bot.juice_wrld_api.get_song(song_id)
+
+                                    # For Juice WRLD, we'll provide the song details as annotations
+                                    # since detailed annotations may not be available like Genius
+                                    response = format_song_card(song)
+                                    await message.reply(response)
+                                    logger.info(f"Juice WRLD song info retrieved for: {query} by user {message.author.id}")
+                                    return  # Successfully handled
+                                    
+                            # If Juice WRLD fails, fall through to Genius
+                        except Exception as e:
+                            logger.error(f"Juice WRLD API error for annotations: {e}", exc_info=True)
+                            # Fall through to Genius
+
+                # Use Genius API for annotations (primary/default)
                 if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
                     await message.reply("❌ Genius API is not configured")
                     return
