@@ -38,7 +38,7 @@ class FallbackManager:
     def __init__(self, config: Config, model_router=None):
         """
         Initialize the fallback manager with configuration
-        
+
         Args:
             config: Configuration object containing provider settings
             model_router: Optional ModelRouter instance for intelligent routing
@@ -52,6 +52,7 @@ class FallbackManager:
         self.last_used_model: Optional[str] = None
         self.shared_session = None
         self.model_router = model_router
+        self.bot = None  # Reference to bot instance for music API access
         
         # Provider priority order (from highest to lowest)
         # Updated order: Cerebras → SambaNova → Groq → Mistral

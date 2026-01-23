@@ -205,16 +205,33 @@ class HealthChecker:
     async def get_health_summary(self) -> Dict[str, Any]:
         """
         Get a comprehensive health summary
-        
+
         Returns:
             Dictionary with health status of all components
         """
         summary = {
             "timestamp": time.time(),
             "providers": {},
+            "music_apis": {},
             "overall_status": "healthy"
         }
-        
+
+        # Check music API health
+        if hasattr(self.fallback_manager, 'bot'):
+            bot = self.fallback_manager.bot
+
+            # Genius API
+            genius_status = "not_configured"
+            if hasattr(bot, 'genius_api') and bot.genius_api is not None:
+                genius_status = "configured"
+            summary["music_apis"]["genius"] = genius_status
+
+            # SoundCloud API
+            soundcloud_status = "not_configured"
+            if hasattr(bot, 'soundcloud_api') and bot.soundcloud_api is not None:
+                soundcloud_status = "configured"
+            summary["music_apis"]["soundcloud"] = soundcloud_status
+
         for provider_name in self.fallback_manager.providers.keys():
             if provider_name not in self.circuit_breakers:
                 continue

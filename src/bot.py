@@ -33,6 +33,8 @@ from .model_registry import ModelRegistry
 from .model_router import ModelRouter
 from .model_analytics import ModelAnalytics
 from .intent_detector import IntentDetector
+from .integrations.genius_api import GeniusAPI
+from .integrations.soundcloud_api import SoundCloudAPI
 
 # Setup logging
 logger = setup_logging(__name__)
@@ -132,16 +134,22 @@ class YamiBot(commands.Bot):
 
         # Setup slash commands
         setup_slash_commands(self)
-        
+
         # Initialize model router with fallback manager
         self.model_router = ModelRouter(self.model_registry, self.fallback_manager)
         self.fallback_manager.model_router = self.model_router
+
+        # Set bot reference in fallback manager for health checker access
+        self.fallback_manager.bot = self
         
         # Start analytics logging task
         analytics_task = asyncio.create_task(
             self.model_analytics.start_periodic_logging(interval_seconds=600)
         )
         self.cleanup_tasks.append(analytics_task)
+
+        # Initialize music APIs if keys are available
+        self._initialize_music_apis()
 
         logger.info("Bot setup complete with resource management and model routing enabled")
     
@@ -191,7 +199,40 @@ class YamiBot(commands.Bot):
         self.fallback_manager.set_shared_session(self.http_session)
         await self.fallback_manager.initialize()
         logger.info("Fallback manager initialized with shared session")
-    
+
+    def _initialize_music_apis(self):
+        """Initialize music APIs if keys are available"""
+        # Genius API
+        if self.config.genius_access_token:
+            try:
+                self.genius_api = GeniusAPI(
+                    access_token=self.config.genius_access_token,
+                    session=self.http_session
+                )
+                logger.info("Genius API initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize Genius API: {e}")
+                self.genius_api = None
+        else:
+            logger.info("Genius API key not configured, lyrics features unavailable")
+            self.genius_api = None
+
+        # SoundCloud API
+        if self.config.soundcloud_client_id and self.config.soundcloud_client_secret:
+            try:
+                self.soundcloud_api = SoundCloudAPI(
+                    client_id=self.config.soundcloud_client_id,
+                    client_secret=self.config.soundcloud_client_secret,
+                    session=self.http_session
+                )
+                logger.info("SoundCloud API initialized successfully")
+            except Exception as e:
+                logger.error(f"Failed to initialize SoundCloud API: {e}")
+                self.soundcloud_api = None
+        else:
+            logger.info("SoundCloud API keys not configured, audio features unavailable")
+            self.soundcloud_api = None
+
     async def _monitor_memory(self):
         """Background task to monitor memory usage"""
         while not self.shutdown_event.is_set():

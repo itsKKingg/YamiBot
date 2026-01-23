@@ -70,6 +70,27 @@ class ModelRouter:
             ("groq", "mixtral-8x7b-32768"),
             ("mistral", "mistral-medium"),
             ("cerebras", "gpt-oss-120b")
+        ],
+        # Music intents - Genius API uses context-aware models
+        "music_lyrics": [
+            ("google", "gemini-1.5-pro"),
+            ("mistral", "mistral-large-2411"),
+            ("google", "gemini-2.0-flash")
+        ],
+        "music_search": [
+            ("google", "gemini-2.0-flash"),
+            ("google", "gemini-1.5-flash"),
+            ("mistral", "mistral-medium")
+        ],
+        "music_artist": [
+            ("google", "gemini-1.5-pro"),
+            ("mistral", "mistral-large-2411"),
+            ("google", "gemini-2.0-flash")
+        ],
+        "music_annotation": [
+            ("google", "gemini-1.5-pro"),
+            ("mistral", "mistral-large-2411"),
+            ("google", "gemini-2.0-flash")
         ]
     }
     

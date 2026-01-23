@@ -32,6 +32,11 @@ class Config:
         self.mistral_api_key = self._get_env("MISTRAL_API_KEY")
         self.google_api_key = self._get_env("GOOGLE_API_KEY")
         self.google_model = self._get_env("GOOGLE_MODEL", default="gemini-2.0-flash")
+
+        # Music API keys
+        self.genius_access_token = self._get_env("GENIUS_ACCESS_TOKEN")
+        self.soundcloud_client_id = self._get_env("SOUNDCLOUD_CLIENT_ID")
+        self.soundcloud_client_secret = self._get_env("SOUNDCLOUD_CLIENT_SECRET")
         
         # Bot configuration
         self.bot_prefix = self._get_env("BOT_PREFIX", default="!")
@@ -111,6 +116,13 @@ class Config:
             "MISTRAL_API_KEY": self.mistral_api_key,
             "GOOGLE_API_KEY": self.google_api_key
         }
+
+        # Check music API keys
+        music_api_keys = {
+            "GENIUS_ACCESS_TOKEN": self.genius_access_token,
+            "SOUNDCLOUD_CLIENT_ID": self.soundcloud_client_id,
+            "SOUNDCLOUD_CLIENT_SECRET": self.soundcloud_client_secret
+        }
         
         missing_providers = []
         available_providers = []
@@ -130,17 +142,26 @@ class Config:
         # Log configuration status
         logger.info(f"Discord token configured: ✓")
         logger.info(f"Available provider API keys: {len(available_providers)}/{len(provider_keys)}")
-        
+
         if missing_providers:
             logger.warning(f"Missing provider API keys: {', '.join(missing_providers)}")
             logger.info("Bot will attempt to initialize with available providers")
         else:
             logger.info("All provider API keys are present")
+
+        # Log music API configuration
+        music_apis_configured = [name for name, value in music_api_keys.items() if value]
+        logger.info(f"Music API keys configured: {len(music_apis_configured)}/{len(music_api_keys)}")
+
+        missing_music_apis = [name for name, value in music_api_keys.items() if not value]
+        if missing_music_apis:
+            logger.warning(f"Missing music API keys: {', '.join(missing_music_apis)}")
+            logger.info("Music features will be unavailable until keys are provided")
     
     def get_debug_info(self) -> dict:
         """
         Get configuration info for debugging (without sensitive data)
-        
+
         Returns:
             Dictionary with non-sensitive configuration info
         """
@@ -159,6 +180,8 @@ class Config:
                 "sambanova": bool(self.sambanova_api_key),
                 "groq": bool(self.groq_api_key),
                 "mistral": bool(self.mistral_api_key),
-                "google": bool(self.google_api_key)
+                "google": bool(self.google_api_key),
+                "genius": bool(self.genius_access_token),
+                "soundcloud": bool(self.soundcloud_client_id) and bool(self.soundcloud_client_secret)
             }
         }

@@ -99,6 +99,22 @@ class CommandHandler:
             elif intent == "clear_specific":
                 await self._handle_clear_specific(message, params.get("count", 0))
 
+            elif intent == "music_lyrics":
+                api_source = intent_result.get("api_source")
+                await self._handle_music_lyrics(message, params.get("query", params.get("rest", "")), api_source)
+
+            elif intent == "music_search":
+                api_source = intent_result.get("api_source")
+                await self._handle_music_search(message, params.get("query", params.get("rest", "")), api_source)
+
+            elif intent == "music_artist":
+                api_source = intent_result.get("api_source")
+                await self._handle_music_artist(message, params.get("query", params.get("rest", "")), api_source)
+
+            elif intent == "music_annotation":
+                api_source = intent_result.get("api_source")
+                await self._handle_music_annotation(message, params.get("query", params.get("rest", "")), api_source)
+
             else:
                 logger.warning(f"Unknown intent: {intent}")
                 await message.reply("I'm not sure how to handle that request. Could you rephrase it?")
@@ -458,6 +474,276 @@ class CommandHandler:
         except Exception as e:
             logger.error(f"Error waiting for reaction confirmation: {e}", exc_info=True)
             return False
+
+    # ============ MUSIC COMMAND HANDLERS ============
+
+    async def _handle_music_lyrics(
+        self,
+        message: discord.Message,
+        query: str,
+        api_source: Optional[str] = None
+    ) -> None:
+        """
+        Handle music lyrics requests
+
+        Args:
+            message: Discord message object
+            query: Search query (song title, artist, etc.)
+            api_source: API source recommendation from intent detector
+        """
+        if not query:
+            await message.reply("What song's lyrics would you like me to find?")
+            return
+
+        try:
+            async with message.channel.typing():
+                # Determine which API to use
+                # api_source is one of: "juice_wrld", "genius", "soundcloud", or None
+
+                if api_source == "juice_wrld":
+                    # Use Juice WRLD API (to be implemented in separate task)
+                    await message.reply(
+                        "🎤 **Juice WRLD Lyrics Requested**\n\n"
+                        f"Searching for: {query}\n\n"
+                        "⚠️ Juice WRLD API integration coming soon. "
+                        "For now, I'll try to find lyrics through Genius."
+                    )
+                    # Fall through to Genius
+
+                if api_source == "genius" or api_source is None:
+                    # Use Genius API
+                    if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
+                        await message.reply("❌ Genius API is not configured. Please set GENIUS_ACCESS_TOKEN in .env")
+                        return
+
+                    # Search for the song
+                    songs = await self.bot.genius_api.search_songs(query, limit=3)
+
+                    if not songs:
+                        await message.reply(f"❌ No lyrics found for: {query}\n\nTry a different search term?")
+                        return
+
+                    # Get the first matching song with details
+                    song_id = songs[0].get('id')
+                    if song_id:
+                        song = await self.bot.genius_api.get_song(song_id)
+
+                        # Get annotations
+                        annotations = await self.bot.genius_api.get_song_annotations(song_id, limit=3)
+
+                        # Format response using Discord embed
+                        from ..formatting.music_formatter import create_discord_genius_embed
+
+                        embed = create_discord_genius_embed(song=song, annotations=annotations)
+                        await message.reply(embed=embed)
+
+                        logger.info(f"Genius lyrics retrieved for: {query} by user {message.author.id}")
+                    else:
+                        await message.reply("❌ Could not retrieve song details")
+
+                else:
+                    await message.reply("❌ Cannot get lyrics from SoundCloud. Try searching on Genius instead.")
+
+        except Exception as e:
+            logger.error(f"Error handling music lyrics request: {e}", exc_info=True)
+            await message.reply("❌ Sorry, I couldn't get the lyrics right now. Please try again later.")
+
+    async def _handle_music_search(
+        self,
+        message: discord.Message,
+        query: str,
+        api_source: Optional[str] = None
+    ) -> None:
+        """
+        Handle music search and embedding requests
+
+        Args:
+            message: Discord message object
+            query: Search query
+            api_source: API source recommendation from intent detector
+        """
+        if not query:
+            await message.reply("What would you like me to search for?")
+            return
+
+        try:
+            async with message.channel.typing():
+                # Determine API based on request type
+                if api_source == "soundcloud" or "embed" in query.lower() or "play" in query.lower():
+                    # Use SoundCloud for audio embedding
+                    if not hasattr(self.bot, 'soundcloud_api') or self.bot.soundcloud_api is None:
+                        await message.reply(
+                            "❌ SoundCloud API is not configured. "
+                            "Please set SOUNDCLOUD_CLIENT_ID and SOUNDCLOUD_CLIENT_SECRET in .env"
+                        )
+                        return
+
+                    # Search for tracks
+                    tracks = await self.bot.soundcloud_api.search_tracks(query, limit=3)
+
+                    if not tracks:
+                        await message.reply(f"❌ No tracks found on SoundCloud for: {query}")
+                        return
+
+                    # Get first track with full details
+                    track_id = tracks[0].get('id')
+                    if track_id:
+                        track = await self.bot.soundcloud_api.get_track(str(track_id))
+
+                        # Format as Discord embed
+                        from ..formatting.music_formatter import create_discord_embed
+
+                        embed = create_discord_embed(track)
+                        await message.reply(embed=embed)
+
+                        logger.info(f"SoundCloud track retrieved: {track.get('title')} for user {message.author.id}")
+                    else:
+                        await message.reply("❌ Could not retrieve track details")
+
+                elif api_source == "genius" or api_source is None:
+                    # Use Genius for general music search
+                    if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
+                        await message.reply("❌ Genius API is not configured")
+                        return
+
+                    # Search for songs
+                    songs = await self.bot.genius_api.search_songs(query, limit=5)
+
+                    if not songs:
+                        await message.reply(f"❌ No songs found for: {query}")
+                        return
+
+                    # Format response
+                    response = f"🎵 **Found {len(songs)} songs** matching '{query}':\n\n"
+                    for i, song in enumerate(songs[:5], 1):
+                        title = song.get('title', 'Unknown')
+                        artist = song.get('primary_artist', {}).get('name', 'Unknown')
+                        url = song.get('url', '')
+
+                        response += f"{i}. **{title}** by {artist}\n"
+                        if url:
+                            response += f"   🔗 [View on Genius]({url})\n"
+
+                    await message.reply(response)
+                    logger.info(f"Genius search performed for: {query} by user {message.author.id}")
+
+                else:
+                    await message.reply("❌ I'm not sure which music service to use for that request.")
+
+        except Exception as e:
+            logger.error(f"Error handling music search: {e}", exc_info=True)
+            await message.reply("❌ Sorry, I couldn't complete the search. Please try again later.")
+
+    async def _handle_music_artist(
+        self,
+        message: discord.Message,
+        query: str,
+        api_source: Optional[str] = None
+    ) -> None:
+        """
+        Handle artist information requests
+
+        Args:
+            message: Discord message object
+            query: Artist name
+            api_source: API source recommendation from intent detector
+        """
+        if not query:
+            await message.reply("Which artist would you like to know about?")
+            return
+
+        try:
+            async with message.channel.typing():
+                # Use Genius API for artist info (primary choice)
+                if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
+                    await message.reply("❌ Genius API is not configured")
+                    return
+
+                # Search for artist
+                artists = await self.bot.genius_api.search_artists(query, limit=1)
+
+                if not artists:
+                    await message.reply(f"❌ No artist found for: {query}")
+                    return
+
+                # Get artist details
+                artist_id = artists[0].get('id')
+                if artist_id:
+                    artist = await self.bot.genius_api.get_artist(artist_id)
+
+                    # Format as Discord embed
+                    from ..formatting.music_formatter import create_discord_genius_embed
+
+                    embed = create_discord_genius_embed(artist=artist)
+                    await message.reply(embed=embed)
+
+                    logger.info(f"Genius artist info retrieved for: {query} by user {message.author.id}")
+                else:
+                    await message.reply("❌ Could not retrieve artist details")
+
+        except Exception as e:
+            logger.error(f"Error handling artist request: {e}", exc_info=True)
+            await message.reply("❌ Sorry, I couldn't get the artist information. Please try again later.")
+
+    async def _handle_music_annotation(
+        self,
+        message: discord.Message,
+        query: str,
+        api_source: Optional[str] = None
+    ) -> None:
+        """
+        Handle annotation/meaning requests
+
+        Args:
+            message: Discord message object
+            query: Lyric line or song reference
+            api_source: API source recommendation from intent detector
+        """
+        if not query:
+            await message.reply("What would you like me to explain?")
+            return
+
+        try:
+            async with message.channel.typing():
+                # Use Genius API for annotations
+                if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
+                    await message.reply("❌ Genius API is not configured")
+                    return
+
+                # Search for song first
+                songs = await self.bot.genius_api.search_songs(query, limit=3)
+
+                if not songs:
+                    await message.reply(f"❌ No songs found matching: {query}")
+                    return
+
+                # Get annotations from first matching song
+                song_id = songs[0].get('id')
+                if song_id:
+                    annotations = await self.bot.genius_api.get_song_annotations(song_id, limit=5)
+
+                    if not annotations:
+                        await message.reply(
+                            f"❌ No annotations found for this song.\n\n"
+                            f"🎵 Searched: {query}\n"
+                            f"🎤 Song: {songs[0].get('title')} by {songs[0].get('primary_artist', {}).get('name')}"
+                        )
+                        return
+
+                    # Format annotations
+                    from ..formatting.music_formatter import format_lyrics_card
+
+                    song = await self.bot.genius_api.get_song(song_id)
+                    response = format_lyrics_card(song, annotations)
+
+                    await message.reply(response)
+                    logger.info(f"Genius annotations retrieved for: {query} by user {message.author.id}")
+                else:
+                    await message.reply("❌ Could not retrieve annotations")
+
+        except Exception as e:
+            logger.error(f"Error handling annotation request: {e}", exc_info=True)
+            await message.reply("❌ Sorry, I couldn't get the annotations. Please try again later.")
 
 
 def setup_slash_commands(bot: commands.Bot) -> None:
