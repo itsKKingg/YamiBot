@@ -104,6 +104,9 @@ def setup_root_logging():
     
     return root_logger
 
+# Module-level logger for this utility module
+logger = logging.getLogger(__name__)
+
 def log_memory_status():
     """
     Log current memory usage of the process
