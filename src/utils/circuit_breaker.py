@@ -128,3 +128,20 @@ class CircuitBreaker:
         self.failure_count = 0
         self.state = CircuitState.CLOSED
         self.last_failure_time = None
+    
+    def can_attempt(self) -> bool:
+        """
+        Check if the circuit breaker can attempt to call the function.
+        
+        Returns:
+            True if circuit is CLOSED or HALF_OPEN, False if OPEN and recovery timeout hasn't passed
+        """
+        return self.state != CircuitState.OPEN or self._should_attempt_reset()
+    
+    def record_success(self):
+        """Record a successful call - similar to _on_success but for tracking"""
+        self._on_success()
+    
+    def record_failure(self):
+        """Record a failed call - similar to _on_failure but for tracking"""
+        self._on_failure()

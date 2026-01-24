@@ -289,9 +289,8 @@ Try any of them! They'll give you more info. 💡"
                 
                 # NEW: Create circuit breaker for this provider
                 self.circuit_breakers[provider_name] = CircuitBreaker(
-                    name=provider_name,
                     failure_threshold=5,  # Open after 5 consecutive failures
-                    timeout=300  # Try recovery after 5 minutes
+                    recovery_timeout=300  # Try recovery after 5 minutes
                 )
                 logger.info(f"✓ Successfully initialized {provider_name} provider with circuit breaker")
                 initialized_count += 1
