@@ -616,8 +616,39 @@ async def main():
         start_health_server()
         logger.info("Health check server started")
         
-        # Start the bot
-        await bot.start(bot.config.discord_token)
+        # Start the bot with exponential backoff retry logic for rate limits
+        max_retries = 5
+        base_delay = 1  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Starting Discord connection (attempt {attempt + 1}/{max_retries})...")
+                await bot.start(bot.config.discord_token)
+                # If successful, break out of retry loop
+                break
+                
+            except discord.HTTPException as e:
+                # Check if this is a rate limit error (429)
+                if e.status == 429 or "429" in str(e):
+                    if attempt < max_retries - 1:
+                        # Calculate exponential backoff delay
+                        delay = base_delay * (2 ** attempt)
+                        logger.warning(
+                            f"⚠️ Discord rate limit (429) detected on attempt {attempt + 1}/{max_retries}. "
+                            f"Retrying in {delay} seconds..."
+                        )
+                        await asyncio.sleep(delay)
+                        continue
+                    else:
+                        logger.error(
+                            f"❌ Max retries ({max_retries}) exhausted for Discord rate limit. "
+                            f"Unable to connect to Discord."
+                        )
+                        raise
+                else:
+                    # Re-raise non-429 errors immediately
+                    logger.error(f"Discord HTTP error (status {e.status}): {e}")
+                    raise
         
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt, initiating graceful shutdown...")

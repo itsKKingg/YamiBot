@@ -107,10 +107,18 @@ class CerebrasProvider(BaseProvider):
             # Use shared session or create one temporarily
             session = self.shared_session if self.shared_session else self.client
             
-            # Make the API call with timeout
+            # Prepare headers with Authorization for API key
+            # This ensures the header is set even when using shared session
+            headers = {
+                "Authorization": f"Bearer {self.config.cerebras_api_key}",
+                "Content-Type": "application/json"
+            }
+            
+            # Make the API call with timeout and explicit headers
             async with session.post(
                 self.api_url,
                 data=json.dumps(payload),
+                headers=headers,
                 timeout=aiohttp.ClientTimeout(total=timeout)
             ) as response:
                 if response.status != 200:
