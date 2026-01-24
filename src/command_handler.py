@@ -19,6 +19,7 @@ from .formatting.music_formatter import (
     format_song_card,
     format_song_list,
     format_artist_info,
+    format_soundcloud_track_details,
     create_discord_embed,
     create_discord_genius_embed,
     create_discord_juice_wrld_embed,
@@ -508,12 +509,15 @@ class CommandHandler:
             async with message.channel.typing():
                 # Determine which API to use
                 # api_source is one of: "juice_wrld", "genius", "soundcloud", or None
+                
+                # Track if we should try Genius as fallback
+                should_try_genius = False
 
                 if api_source == "juice_wrld":
                     # Use Juice WRLD API
                     if not hasattr(self.bot, 'juice_wrld_api') or self.bot.juice_wrld_api is None:
                         await message.reply("⚠️ Juice WRLD API is not configured. Falling back to Genius.")
-                        # Fall through to Genius
+                        should_try_genius = True
                     else:
                         try:
                             # Search for songs
@@ -522,7 +526,7 @@ class CommandHandler:
 
                             if not songs:
                                 await message.reply(f"❌ No Juice WRLD songs found for: {query}\n\nTrying Genius instead...")
-                                # Fall through to Genius
+                                should_try_genius = True
                             elif len(songs) > 0:
                                 # Get the first matching song with full details
                                 song_id = songs[0].get('id')
@@ -537,19 +541,19 @@ class CommandHandler:
                                     return  # Successfully handled, don't fall through
                                 else:
                                     await message.reply("❌ Could not retrieve Juice WRLD song details. Trying Genius...")
-                                    # Fall through to Genius
+                                    should_try_genius = True
                             else:
                                 # Should not reach here but fall through to be safe
                                 await message.reply("❌ Could not retrieve Juice WRLD song details.")
-                                # Fall through to Genius
+                                should_try_genius = True
 
                         except Exception as e:
                             logger.error(f"Error retrieving from Juice WRLD API: {e}", exc_info=True)
                             await message.reply(f"⚠️ Juice WRLD API error. Falling back to Genius...")
-                            # Fall through to Genius
+                            should_try_genius = True
 
-                if api_source == "genius" or api_source is None:
-                    # Use Genius API
+                if api_source == "genius" or api_source is None or should_try_genius:
+                    # Use Genius API (Plain text output only)
                     if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
                         await message.reply("❌ Genius API is not configured. Please set GENIUS_ACCESS_TOKEN in .env")
                         return
@@ -565,20 +569,44 @@ class CommandHandler:
                     song_id = songs[0].get('id')
                     if song_id:
                         song = await self.bot.genius_api.get_song(song_id)
+                        
+                        # Get full lyrics text
+                        lyrics = await self.bot.genius_api.get_lyrics(song_id)
 
                         # Get annotations
-                        annotations = await self.bot.genius_api.get_song_annotations(song_id, limit=3)
+                        annotations = await self.bot.genius_api.get_song_annotations(song_id, limit=5)
 
-                        # Format response using Discord embed
-                        embed = create_discord_genius_embed(song=song, annotations=annotations)
-                        await message.reply(embed=embed)
+                        # Format response as PLAIN TEXT (no Discord embed)
+                        response = format_lyrics_card(song=song, lyrics=lyrics, annotations=annotations)
+                        
+                        # Split response if too long for Discord (2000 char limit)
+                        if len(response) > 1900:
+                            # Send in chunks
+                            chunks = []
+                            current_chunk = ""
+                            for line in response.split('\n'):
+                                if len(current_chunk) + len(line) + 1 > 1900:
+                                    chunks.append(current_chunk)
+                                    current_chunk = line + '\n'
+                                else:
+                                    current_chunk += line + '\n'
+                            if current_chunk:
+                                chunks.append(current_chunk)
+                            
+                            # Send first chunk as reply, rest as follow-ups
+                            await message.reply(chunks[0])
+                            for chunk in chunks[1:]:
+                                await message.channel.send(chunk)
+                        else:
+                            await message.reply(response)
 
-                        logger.info(f"Genius lyrics retrieved for: {query} by user {message.author.id}")
+                        logger.info(f"Genius lyrics retrieved (plain text) for: {query} by user {message.author.id}")
                     else:
                         await message.reply("❌ Could not retrieve song details")
 
-                else:
-                    await message.reply("❌ Cannot get lyrics from SoundCloud. Try searching on Genius instead.")
+                elif api_source == "soundcloud":
+                    # SoundCloud doesn't provide lyrics
+                    await message.reply("❌ SoundCloud doesn't provide lyrics. Use Genius for lyrics instead.")
 
         except Exception as e:
             logger.error(f"Error handling music lyrics request: {e}", exc_info=True)
@@ -605,8 +633,9 @@ class CommandHandler:
         try:
             async with message.channel.typing():
                 # Determine API based on request type
-                if api_source == "soundcloud" or "embed" in query.lower() or "play" in query.lower():
-                    # Use SoundCloud for audio embedding
+                # SoundCloud: Only for explicit SoundCloud track discovery
+                if api_source == "soundcloud":
+                    # Use SoundCloud for track discovery ONLY on SoundCloud platform
                     if not hasattr(self.bot, 'soundcloud_api') or self.bot.soundcloud_api is None:
                         await message.reply(
                             "❌ SoundCloud API is not configured. "
@@ -614,25 +643,46 @@ class CommandHandler:
                         )
                         return
 
-                    # Search for tracks
-                    tracks = await self.bot.soundcloud_api.search_tracks(query, limit=3)
+                    # Search for tracks on SoundCloud
+                    logger.info(f"Searching SoundCloud for: {query} by user {message.author.id}")
+                    tracks = await self.bot.soundcloud_api.search_tracks(query, limit=5)
 
                     if not tracks:
                         await message.reply(f"❌ No tracks found on SoundCloud for: {query}")
                         return
 
-                    # Get first track with full details
-                    track_id = tracks[0].get('id')
-                    if track_id:
-                        track = await self.bot.soundcloud_api.get_track(str(track_id))
-
-                        # Format as Discord embed
-                        embed = create_discord_embed(track)
-                        await message.reply(embed=embed)
-
-                        logger.info(f"SoundCloud track retrieved: {track.get('title')} for user {message.author.id}")
-                    else:
-                        await message.reply("❌ Could not retrieve track details")
+                    # Format response with SoundCloud track info
+                    response = f"🎧 **Found {len(tracks)} tracks on SoundCloud** matching '{query}':\n\n"
+                    
+                    for i, track in enumerate(tracks[:5], 1):
+                        title = track.get('title', 'Unknown Track')
+                        artist = track.get('artist', 'Unknown Artist')
+                        duration_ms = track.get('duration', 0)
+                        play_count = track.get('playback_count', 0)
+                        permalink = track.get('permalink_url', '')
+                        
+                        # Format duration
+                        if duration_ms:
+                            duration_sec = duration_ms // 1000
+                            minutes, seconds = divmod(duration_sec, 60)
+                            duration_str = f"{minutes}:{seconds:02d}"
+                        else:
+                            duration_str = "Unknown"
+                        
+                        response += f"{i}. **{title}** by {artist}\n"
+                        response += f"   ⏱️ Duration: {duration_str}"
+                        if play_count:
+                            response += f" | 🎮 {play_count:,} plays"
+                        response += "\n"
+                        if permalink:
+                            response += f"   🔗 [Listen on SoundCloud]({permalink})\n"
+                        response += "\n"
+                    
+                    response += "*Tracks found on SoundCloud platform*"
+                    
+                    await message.reply(response)
+                    logger.info(f"SoundCloud track discovery completed for: {query} by user {message.author.id}")
+                    return
 
                 elif api_source == "juice_wrld":
                     # Use Juice WRLD API for general music search

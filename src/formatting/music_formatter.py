@@ -16,16 +16,17 @@ logger = setup_logging(__name__)
 
 # ============ GENIUS FORMATTING FUNCTIONS ============
 
-def format_lyrics_card(song: Dict, annotations: Optional[List[Dict]] = None) -> str:
+def format_lyrics_card(song: Dict, lyrics: Optional[str] = None, annotations: Optional[List[Dict]] = None) -> str:
     """
-    Format song lyrics with annotations into a Discord-friendly card
+    Format song lyrics with annotations into plain text format
 
     Args:
         song: Song data dictionary from Genius API
+        lyrics: Full lyrics text (plain text)
         annotations: Optional list of annotations for the song
 
     Returns:
-        Formatted string with song info and annotations
+        Formatted string with song info, lyrics, and annotations
     """
     if not song:
         return "❌ No song data available"
@@ -33,36 +34,47 @@ def format_lyrics_card(song: Dict, annotations: Optional[List[Dict]] = None) -> 
     lines = []
 
     # Song header
-    lines.append(f"🎵 **{song.get('title', 'Unknown')}**")
-    lines.append(f"👤 Artist: {song.get('artist', 'Unknown')}")
+    lines.append("=" * 50)
+    lines.append(f"🎵 {song.get('title', 'Unknown')}")
+    lines.append(f"👤 {song.get('artist', 'Unknown')}")
     if song.get('album'):
-        lines.append(f"💿 Album: {song.get('album')}")
-
+        lines.append(f"💿 {song.get('album')}")
+    
     # Metadata
     if song.get('release_date'):
-        lines.append(f"📅 Released: {song.get('release_date')}")
-
+        lines.append(f"📅 {song.get('release_date')}")
+    
     # Producer credits
     if song.get('producers'):
         producers = song.get('producers', [])
         if producers:
             lines.append(f"🎹 Produced by: {', '.join(producers[:3])}")
-
+    
     # Featured artists
     if song.get('features'):
         features = song.get('features', [])
         if features:
             lines.append(f"🎤 Featuring: {', '.join(features[:3])}")
-
-    # Genius link
-    if song.get('url'):
-        lines.append(f"🔗 [View on Genius]({song.get('url')})")
-
+    
+    lines.append("=" * 50)
     lines.append("")  # Empty line separator
 
+    # Full lyrics section
+    if lyrics:
+        lines.append("📜 **LYRICS:**")
+        lines.append("")
+        lines.append(lyrics)
+        lines.append("")
+        lines.append("=" * 50)
+    else:
+        lines.append("⚠️ Lyrics not available")
+        lines.append("")
+    
     # Annotations section
     if annotations:
-        lines.append("📝 **Annotations:**")
+        lines.append("")
+        lines.append("📝 **ANNOTATIONS & EXPLANATIONS:**")
+        lines.append("")
         for i, ann in enumerate(annotations[:5], 1):  # Show top 5
             lyric = ann.get('lyric', '').strip()
             annotation = ann.get('annotation', '').strip()
@@ -70,14 +82,20 @@ def format_lyrics_card(song: Dict, annotations: Optional[List[Dict]] = None) -> 
 
             if lyric and annotation:
                 # Truncate long annotations
-                if len(annotation) > 300:
-                    annotation = annotation[:297] + "..."
+                if len(annotation) > 400:
+                    annotation = annotation[:397] + "..."
 
-                lines.append(f"\n{i}. **{lyric}**")
-                lines.append(f"   💬 *{author}* says:")
+                lines.append(f"{i}. \"{lyric}\"")
+                lines.append(f"   💬 {author}:")
                 lines.append(f"   {annotation}")
-    else:
-        lines.append("📝 No annotations available for this song")
+                lines.append("")
+    
+    # Genius link
+    lines.append("")
+    if song.get('url'):
+        lines.append(f"🔗 View full lyrics and more on Genius: {song.get('url')}")
+    lines.append("")
+    lines.append("*Powered by Genius*")
 
     return "\n".join(lines)
 
@@ -279,6 +297,68 @@ def create_discord_genius_embed(
 
 
 # ============ SOUNDCLOUD FORMATTING FUNCTIONS ============
+
+def format_soundcloud_track_details(track: Dict) -> str:
+    """
+    Format SoundCloud track with detailed information (plain text)
+    
+    Args:
+        track: Track data dictionary from SoundCloud API
+        
+    Returns:
+        Formatted string with detailed track info
+    """
+    if not track:
+        return "❌ No track data available"
+    
+    lines = []
+    
+    # Track header
+    lines.append("=" * 50)
+    lines.append(f"🎧 {track.get('title', 'Unknown Track')}")
+    lines.append(f"👤 {track.get('artist', 'Unknown Artist')}")
+    lines.append("=" * 50)
+    lines.append("")
+    
+    # Duration
+    duration_ms = track.get('duration', 0)
+    if duration_ms:
+        duration_sec = duration_ms // 1000
+        minutes, seconds = divmod(duration_sec, 60)
+        lines.append(f"⏱️ Duration: {minutes}:{seconds:02d}")
+    
+    # Stats
+    play_count = track.get('playback_count', 0)
+    if play_count:
+        lines.append(f"🎮 Play Count: {play_count:,}")
+    
+    likes_count = track.get('likes_count', 0)
+    if likes_count:
+        lines.append(f"❤️ Likes: {likes_count:,}")
+    
+    # Genre
+    genre = track.get('genre', '')
+    if genre:
+        lines.append(f"🎸 Genre: {genre}")
+    
+    lines.append("")
+    
+    # Description
+    description = track.get('description', '').strip()
+    if description:
+        lines.append("📝 **Description:**")
+        lines.append(description[:500] + "..." if len(description) > 500 else description)
+        lines.append("")
+    
+    # Artist profile link
+    permalink = track.get('permalink_url', '')
+    if permalink:
+        lines.append(f"🔗 Listen on SoundCloud: {permalink}")
+    
+    lines.append("")
+    lines.append("*Track found on SoundCloud platform*")
+    
+    return "\n".join(lines)
 
 def format_soundcloud_embed(track: Dict) -> str:
     """
