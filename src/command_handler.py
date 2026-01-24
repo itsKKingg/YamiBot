@@ -864,6 +864,8 @@ def setup_slash_commands(bot: commands.Bot) -> None:
     @bot.tree.command(name="status", description="Show bot status and statistics")
     async def status_slash(interaction: discord.Interaction):
         """Slash command for status"""
+        await interaction.response.defer(ephemeral=True)
+
         command_handler = CommandHandler(bot)
 
         # Create a mock message object for the handler
@@ -871,10 +873,11 @@ def setup_slash_commands(bot: commands.Bot) -> None:
             def __init__(self, channel, author):
                 self.channel = channel
                 self.author = author
+                async def reply(self, content):
+                    await interaction.followup.send(content, ephemeral=True)
 
         mock_message = MockMessage(interaction.channel, interaction.user)
         await command_handler._handle_status(mock_message)
-        await interaction.response.send_message("Status sent!", ephemeral=True)
 
     @bot.tree.command(name="forget", description="Clear conversation memory (requires confirmation)")
     async def forget_slash(interaction: discord.Interaction):
@@ -889,43 +892,52 @@ def setup_slash_commands(bot: commands.Bot) -> None:
     @app_commands.describe(model_name="The model to switch to")
     async def model_slash(interaction: discord.Interaction, model_name: str):
         """Slash command to switch models"""
+        await interaction.response.defer(ephemeral=True)
+
         command_handler = CommandHandler(bot)
 
         class MockMessage:
             def __init__(self, channel, author):
                 self.channel = channel
                 self.author = author
+                async def reply(self, content):
+                    await interaction.followup.send(content, ephemeral=True)
 
         mock_message = MockMessage(interaction.channel, interaction.user)
         await command_handler._handle_model_switch(mock_message, model_name)
-        await interaction.response.send_message(f"Model switch request processed for: {model_name}", ephemeral=True)
 
     @bot.tree.command(name="models", description="List all available AI models")
     async def models_slash(interaction: discord.Interaction):
         """Slash command to list models"""
+        await interaction.response.defer(ephemeral=True)
+
         command_handler = CommandHandler(bot)
 
         class MockMessage:
             def __init__(self, channel, author):
                 self.channel = channel
                 self.author = author
+                async def reply(self, content):
+                    await interaction.followup.send(content, ephemeral=True)
 
         mock_message = MockMessage(interaction.channel, interaction.user)
         await command_handler._handle_model_list(mock_message)
-        await interaction.response.send_message("Models list sent!", ephemeral=True)
 
     @bot.tree.command(name="stats", description="Show conversation statistics")
     async def stats_slash(interaction: discord.Interaction):
         """Slash command for stats"""
+        await interaction.response.defer(ephemeral=True)
+
         command_handler = CommandHandler(bot)
 
         class MockMessage:
             def __init__(self, channel, author):
                 self.channel = channel
                 self.author = author
+                async def reply(self, content):
+                    await interaction.followup.send(content, ephemeral=True)
 
         mock_message = MockMessage(interaction.channel, interaction.user)
         await command_handler._handle_status(mock_message)
-        await interaction.response.send_message("Statistics sent!", ephemeral=True)
 
     logger.info("Slash commands registered")

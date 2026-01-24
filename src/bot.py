@@ -292,7 +292,14 @@ class YamiBot(commands.Bot):
         """
         logger.info(f"Logged in as {self.user} (ID: {self.user.id})")
         logger.info(f"Connected to {len(self.guilds)} guilds")
-        
+
+        # Sync slash commands with Discord
+        try:
+            synced = await self.tree.sync()
+            logger.info(f"✅ Synced {len(synced)} slash commands")
+        except Exception as e:
+            logger.error(f"❌ Failed to sync slash commands: {e}")
+
         # Set bot presence
         await self.change_presence(
             activity=discord.Activity(
@@ -300,9 +307,9 @@ class YamiBot(commands.Bot):
                 name="@mentions | AI conversation bot"
             )
         )
-        
+
         logger.info("Bot is ready and operational")
-        
+
         # Log memory status on startup
         memory_info = log_memory_status()
         logger.info(f"Bot startup memory usage: {memory_info['rss_mb']}MB")
