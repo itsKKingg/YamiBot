@@ -509,12 +509,15 @@ class CommandHandler:
             async with message.channel.typing():
                 # Determine which API to use
                 # api_source is one of: "juice_wrld", "genius", "soundcloud", or None
+                
+                # Track if we should try Genius as fallback
+                should_try_genius = False
 
                 if api_source == "juice_wrld":
                     # Use Juice WRLD API
                     if not hasattr(self.bot, 'juice_wrld_api') or self.bot.juice_wrld_api is None:
                         await message.reply("⚠️ Juice WRLD API is not configured. Falling back to Genius.")
-                        # Fall through to Genius
+                        should_try_genius = True
                     else:
                         try:
                             # Search for songs
@@ -523,7 +526,7 @@ class CommandHandler:
 
                             if not songs:
                                 await message.reply(f"❌ No Juice WRLD songs found for: {query}\n\nTrying Genius instead...")
-                                # Fall through to Genius
+                                should_try_genius = True
                             elif len(songs) > 0:
                                 # Get the first matching song with full details
                                 song_id = songs[0].get('id')
@@ -538,18 +541,18 @@ class CommandHandler:
                                     return  # Successfully handled, don't fall through
                                 else:
                                     await message.reply("❌ Could not retrieve Juice WRLD song details. Trying Genius...")
-                                    # Fall through to Genius
+                                    should_try_genius = True
                             else:
                                 # Should not reach here but fall through to be safe
                                 await message.reply("❌ Could not retrieve Juice WRLD song details.")
-                                # Fall through to Genius
+                                should_try_genius = True
 
                         except Exception as e:
                             logger.error(f"Error retrieving from Juice WRLD API: {e}", exc_info=True)
                             await message.reply(f"⚠️ Juice WRLD API error. Falling back to Genius...")
-                            # Fall through to Genius
+                            should_try_genius = True
 
-                if api_source == "genius" or api_source is None:
+                if api_source == "genius" or api_source is None or should_try_genius:
                     # Use Genius API (Plain text output only)
                     if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
                         await message.reply("❌ Genius API is not configured. Please set GENIUS_ACCESS_TOKEN in .env")
@@ -601,8 +604,9 @@ class CommandHandler:
                     else:
                         await message.reply("❌ Could not retrieve song details")
 
-                else:
-                    await message.reply("❌ Cannot get lyrics from SoundCloud. Use Genius for lyrics instead.")
+                elif api_source == "soundcloud":
+                    # SoundCloud doesn't provide lyrics
+                    await message.reply("❌ SoundCloud doesn't provide lyrics. Use Genius for lyrics instead.")
 
         except Exception as e:
             logger.error(f"Error handling music lyrics request: {e}", exc_info=True)
