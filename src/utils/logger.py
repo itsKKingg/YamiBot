@@ -36,9 +36,15 @@ class CustomFormatter(logging.Formatter):
     }
     
     def format(self, record):
-        log_fmt = self.FORMATS.get(record.levelno)
-        formatter = logging.Formatter(log_fmt, datefmt=LOG_DATE_FORMAT)
-        return formatter.format(record)
+        log_fmt = self.FORMATS.get(record.levelno, self.format_str)
+        self._fmt = log_fmt
+        self.datefmt = LOG_DATE_FORMAT
+        
+        # In Python 3.2+, we also need to update the style object
+        if hasattr(self, '_style'):
+            self._style._fmt = log_fmt
+            
+        return super().format(record)
 
 def setup_logging(name: str, log_level: Optional[int] = None) -> logging.Logger:
     """
