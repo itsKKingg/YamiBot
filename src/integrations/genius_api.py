@@ -398,6 +398,92 @@ class GeniusAPI:
             logger.error(f"Error getting annotations: {e}")
             return []
 
+    async def get_lyrics(self, song_id: int) -> str:
+        """
+        Scrape lyrics from Genius song page
+        
+        Note: Genius API doesn't provide lyrics directly, so we scrape the page
+        
+        Args:
+            song_id: Genius song ID
+            
+        Returns:
+            Lyrics text or empty string if not found
+        """
+        logger.info(f"Fetching lyrics for song ID: {song_id}")
+        
+        # First get the song to get its URL
+        song = await self.get_song(song_id)
+        if not song or not song.get("url"):
+            logger.warning(f"Cannot get lyrics - song not found: {song_id}")
+            return ""
+            
+        song_url = song.get("url")
+        
+        try:
+            # Scrape the lyrics from the song page
+            async with asyncio.timeout(self.timeout):
+                async with self._session.get(song_url) as response:
+                    if response.status != 200:
+                        logger.error(f"Failed to fetch lyrics page: {response.status}")
+                        return ""
+                    
+                    html = await response.text()
+                    
+                    # Extract lyrics from HTML
+                    # Genius uses various div containers for lyrics
+                    # Try to find lyrics in common patterns
+                    import re
+                    
+                    # Pattern 1: Look for lyrics in data-lyrics-container divs
+                    lyrics_pattern = r'<div[^>]*data-lyrics-container="true"[^>]*>(.*?)</div>'
+                    lyrics_matches = re.findall(lyrics_pattern, html, re.DOTALL)
+                    
+                    if lyrics_matches:
+                        # Combine all lyrics sections
+                        lyrics_html = " ".join(lyrics_matches)
+                        
+                        # Clean HTML tags
+                        lyrics_text = re.sub(r'<br\s*/?>', '\n', lyrics_html)  # Convert <br> to newlines
+                        lyrics_text = re.sub(r'<[^>]+>', '', lyrics_text)  # Remove all HTML tags
+                        lyrics_text = lyrics_text.replace('&amp;', '&')
+                        lyrics_text = lyrics_text.replace('&lt;', '<')
+                        lyrics_text = lyrics_text.replace('&gt;', '>')
+                        lyrics_text = lyrics_text.replace('&quot;', '"')
+                        lyrics_text = lyrics_text.replace('&#39;', "'")
+                        lyrics_text = lyrics_text.strip()
+                        
+                        logger.info(f"Successfully extracted lyrics ({len(lyrics_text)} characters)")
+                        return lyrics_text
+                    
+                    # Pattern 2: Fallback - look for Lyrics__ class divs
+                    lyrics_pattern_2 = r'<div[^>]*class="[^"]*Lyrics__Container[^"]*"[^>]*>(.*?)</div>'
+                    lyrics_matches_2 = re.findall(lyrics_pattern_2, html, re.DOTALL)
+                    
+                    if lyrics_matches_2:
+                        lyrics_html = " ".join(lyrics_matches_2)
+                        lyrics_text = re.sub(r'<br\s*/?>', '\n', lyrics_html)
+                        lyrics_text = re.sub(r'<[^>]+>', '', lyrics_text)
+                        lyrics_text = lyrics_text.replace('&amp;', '&')
+                        lyrics_text = lyrics_text.replace('&lt;', '<')
+                        lyrics_text = lyrics_text.replace('&gt;', '>')
+                        lyrics_text = lyrics_text.replace('&quot;', '"')
+                        lyrics_text = lyrics_text.replace('&#39;', "'")
+                        lyrics_text = lyrics_text.strip()
+                        
+                        logger.info(f"Successfully extracted lyrics using fallback method ({len(lyrics_text)} characters)")
+                        return lyrics_text
+                    
+                    logger.warning("Could not extract lyrics from page")
+                    return ""
+                    
+        except asyncio.TimeoutError:
+            logger.warning(f"Timeout fetching lyrics from {song_url}")
+            return ""
+        except Exception as e:
+            logger.error(f"Error fetching lyrics: {e}")
+            return ""
+    
     async def close(self) -> None:
         """
         Clean up session if it was created by this wrapper

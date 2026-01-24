@@ -82,18 +82,18 @@ class IntentDetector:
         },
         "music_search": {
             "keywords": [
-                "find song", "search for song", "what song", "play",
-                "embed", "soundcloud", "find music", "search music"
+                "find song", "search for song", "what song",
+                "soundcloud", "find music", "search music", "find track"
             ],
             "patterns": [
                 r"\bfind\s+(?:a\s+)?song\s+(?:by\s+)?([^?]+)",
                 r"\bsearch\s+(?:for\s+)?(?:a\s+)?song\s+(?:by\s+)?([^?]+)",
                 r"\bwhat(?:'s|s)?\s+the\s+song\s+(?:that\s+goes\s+)?([^?]+)",
-                r"\bplay\s+([^?]+)",
-                r"\bembed\s+([^?]+)",
-                r"\bsoundcloud\s+([^?]+)",
+                r"\bsoundcloud\s+(?:search\s+)?([^?]+)",
+                r"\bfind\s+(?:on\s+)?soundcloud\s+([^?]+)",
                 r"\bfind\s+music\s+([^?]+)",
-                r"\bsearch\s+music\s+([^?]+)"
+                r"\bsearch\s+music\s+([^?]+)",
+                r"\bfind\s+track\s+([^?]+)"
             ],
             "confidence": 0.8,
             "extract_param": True
@@ -323,8 +323,8 @@ class IntentDetector:
         - If "Juice WRLD" mentioned → "juice_wrld" (primary)
         - If "genius" explicitly mentioned → "genius"
         - If "lyrics" without "Juice WRLD" → "genius"
-        - If "embed", "soundcloud", or "play" → "soundcloud"
-        - Otherwise → None (use default routing)
+        - If "soundcloud" explicitly mentioned → "soundcloud"
+        - Otherwise → None (use default routing - Genius)
 
         Args:
             message: The user's message (lowercase)
@@ -342,17 +342,17 @@ class IntentDetector:
             logger.debug("API source: genius (explicitly requested)")
             return "genius"
 
-        # Priority 3: Audio/embed requests - SoundCloud
-        if any(keyword in message for keyword in ["embed", "soundcloud", "play this"]):
-            logger.debug("API source: soundcloud (audio/embed request)")
+        # Priority 3: SoundCloud - ONLY when explicitly mentioned
+        if "soundcloud" in message:
+            logger.debug("API source: soundcloud (explicitly requested)")
             return "soundcloud"
 
         # Priority 4: Lyrics requests - Genius (non-Juice WRLD)
-        if "lyrics" in message:
+        if "lyrics" in message or "lyric" in message:
             logger.debug("API source: genius (lyrics request)")
             return "genius"
 
-        # No specific API determined
+        # No specific API determined - defaults to Genius for music
         logger.debug("API source: None (use default routing)")
         return None
 
