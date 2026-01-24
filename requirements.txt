@@ -3,7 +3,7 @@
 # Last updated: 2025-01-23
 
 # Discord bot framework
-discord.py==2.4.0
+discord.py==2.5.0
 
 # AI Provider SDKs
 groq==0.13.0
