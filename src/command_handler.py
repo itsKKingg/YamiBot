@@ -982,21 +982,34 @@ class CommandHandler:
                 if api_source == "juice_wrld":
                     # Use Juice WRLD API first (primary). Genius is backup for Juice WRLD songs only.
                     if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+                        await message.reply("⚠️ Juice WRLD API is unavailable, trying Genius backup...")
                         should_try_genius = True
                     else:
                         try:
+                            # 1. Search and resolve the song from Juice WRLD API (Requirement #1)
+                            logger.info(f"Searching Juice WRLD API for: {query}")
                             song = await self._resolve_juice_song(song_query=query, song_id=None)
-                            if not song:
+
+                            if not song or not song.get("id"):
+                                # Auto-fallback to Genius with notification (Requirement #4)
+                                await message.reply("⚠️ Song not found in Juice WRLD database, checking Genius...")
                                 should_try_genius = True
                             else:
-                                lyrics = (song.get("lyrics") or "").strip()
+                                # 2. Call the dedicated lyrics endpoint (Requirement #1)
+                                logger.info(f"Fetching lyrics from Juice WRLD API for song ID: {song.get('id')}")
+                                lyrics = await self.bot.juice_wrld_api.get_lyrics(song["id"])
+                                lyrics = (lyrics or "").strip()
 
                                 if lyrics:
-                                    # Song details as embed
+                                    # Update song dict with retrieved lyrics
+                                    song["lyrics"] = lyrics
+
+                                    # 3. Format response as Discord embed with metadata (Requirement #1)
                                     await message.reply(embed=create_discord_juice_wrld_embed(song=song))
 
-                                    # Send lyrics as plain text (chunked), preserving section labels like [Verse].
-                                    header = f"📜 **LYRICS — {song.get('title', 'Unknown')}**\n"
+                                    # 4. Send lyrics as plain text (chunked), preserving section labels like [Verse] (Requirement #2)
+                                    header = f"📜 **LYRICS — {song.get('title', 'Unknown')}**\n\n"
+
                                     content = header + lyrics
                                     if len(content) > 1900:
                                         chunks = []
@@ -1020,11 +1033,13 @@ class CommandHandler:
                                     )
                                     return
 
-                                # No lyrics in Juice WRLD payload - fall back to Genius (backup) if applicable
+                                # No lyrics in Juice WRLD payload - fall back to Genius (backup)
+                                await message.reply("⚠️ Lyrics not found in Juice WRLD database, checking Genius...")
                                 should_try_genius = True
 
                         except Exception as e:
                             logger.error(f"Error retrieving from Juice WRLD API: {e}", exc_info=True)
+                            await message.reply("⚠️ Error accessing Juice WRLD database, checking Genius fallback...")
                             should_try_genius = True
 
                 if api_source == "genius" or should_try_genius:
@@ -1034,7 +1049,8 @@ class CommandHandler:
                         return
 
                     if should_try_genius and api_source != "genius":
-                        await message.reply("⚠️ Juice WRLD API couldn't fetch lyrics — trying Genius backup...")
+                        # Notification already sent in Juice WRLD block
+                        pass
 
                     # Use Genius API (Plain text output only)
                     if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
@@ -1045,7 +1061,10 @@ class CommandHandler:
                     songs = await self.bot.genius_api.search_songs(query, limit=3)
 
                     if not songs:
-                        await message.reply(f"❌ No lyrics found for: {query}\n\nTry a different search term?")
+                        if should_try_genius:
+                            await message.reply(f"❌ Song not found in either database (Juice WRLD or Genius) for: {query}")
+                        else:
+                            await message.reply(f"❌ No lyrics found for: {query}\n\nTry a different search term?")
                         return
 
                     # Get the first matching song with details

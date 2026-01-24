@@ -328,6 +328,21 @@ class JuiceWrldAPI:
         raw = self._extract_object(data)
         return self._normalize_song(raw) if raw else {}
 
+    async def get_lyrics(self, song_id: Union[str, int]) -> str:
+        """Fetch full lyrics for a specific song ID."""
+        data = await self._make_request(f"{self.SONGS_ENDPOINT}{song_id}/lyrics/")
+        if not data:
+            return ""
+
+        if isinstance(data, str):
+            return data.strip()
+
+        if isinstance(data, dict):
+            # Try various common keys for lyrics
+            return data.get("lyrics") or data.get("lyric") or data.get("full_lyrics") or ""
+
+        return ""
+
     async def list_eras(self) -> List[Dict[str, Any]]:
         data = await self._make_request(self.ERAS_ENDPOINT)
         eras = [self._normalize_era(r) for r in self._extract_list(data)]
