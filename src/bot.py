@@ -93,6 +93,7 @@ class YamiBot(commands.Bot):
         self.last_provider_used = None
         self.last_model_used = None
         self.messages_processed = 0
+        self._is_closing = False
 
         # Command handler
         self.command_handler = None
@@ -258,6 +259,9 @@ class YamiBot(commands.Bot):
     
     async def _graceful_shutdown(self):
         """Perform graceful shutdown of all resources"""
+        if self._is_closing:
+            return
+        self._is_closing = True
         logger.info("Starting graceful shutdown...")
         
         # Set shutdown event to stop background tasks
@@ -282,7 +286,7 @@ class YamiBot(commands.Bot):
         logger.info("Health check server stopped")
         
         # Close Discord connection
-        await self.close()
+        await super().close()
         
         logger.info("Graceful shutdown complete")
     
@@ -561,6 +565,8 @@ class YamiBot(commands.Bot):
         """
         Cleanup when bot is shutting down
         """
+        if self._is_closing:
+            return
         logger.info("Bot close() called, performing cleanup...")
         await self._graceful_shutdown()
         logger.info("Bot shutdown complete")
