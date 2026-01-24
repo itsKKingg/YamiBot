@@ -45,6 +45,8 @@ class CommandHandler:
         self.bot = bot
         self.intent_detector = IntentDetector()
         self.pending_confirmations = {}  # user_id: {message_id, action_type, params}
+        self.processed_messages = set()  # Track processed message IDs to prevent duplicates
+        self.max_processed_messages = 1000  # Limit size of tracking set
 
         logger.info("Command handler initialized")
 
@@ -58,6 +60,11 @@ class CommandHandler:
         Returns:
             True if message was a command and was handled, False otherwise
         """
+        # Check if we've already processed this message (prevent duplicates)
+        if message.id in self.processed_messages:
+            logger.warning(f"⚠️ Message {message.id} already processed, skipping to prevent duplicate response")
+            return True  # Return True to indicate it was handled (even though we're skipping)
+        
         # Extract clean message content
         content = MessageValidator.extract_message_content(message, self.bot)
 
@@ -66,12 +73,39 @@ class CommandHandler:
 
         # If no special intent (just chat), return False
         if intent_result["intent"] == "chat":
+            logger.debug(f"No command intent detected for message: {content[:50]}")
             return False
 
-        # Handle the intent
-        logger.info(f"Handling intent: {intent_result['intent']} for user {message.author.id}")
-        await self._handle_intent(message, intent_result)
+        # Mark message as processed BEFORE handling to prevent race conditions
+        self.processed_messages.add(message.id)
+        
+        # Limit the size of the processed messages set
+        if len(self.processed_messages) > self.max_processed_messages:
+            # Remove oldest entries (though set doesn't maintain order, this limits memory)
+            excess = len(self.processed_messages) - self.max_processed_messages
+            for _ in range(excess):
+                self.processed_messages.pop()
 
+        # Handle the intent
+        intent = intent_result["intent"]
+        api_source = intent_result.get("api_source")
+        params = intent_result.get("params", {})
+        
+        logger.info(
+            f"🎯 Handling intent: {intent} "
+            f"(api_source: {api_source}, params: {params}) "
+            f"for user {message.author.id} (msg_id: {message.id})"
+        )
+        
+        try:
+            await self._handle_intent(message, intent_result)
+            logger.info(f"✅ Intent {intent} handled successfully for user {message.author.id}")
+        except Exception as e:
+            logger.error(f"❌ Error handling intent {intent}: {e}", exc_info=True)
+            # Remove from processed set if handling failed, so it can be retried
+            self.processed_messages.discard(message.id)
+            raise
+        
         return True
 
     async def _handle_intent(self, message: discord.Message, intent_result: Dict[str, any]) -> None:
@@ -113,9 +147,11 @@ class CommandHandler:
 
             # ============ JUICE WRLD API INTENTS (PRIMARY MUSIC SOURCE) ============
             elif intent == "juice_search":
+                logger.info(f"🎵 Routing to juice_search handler")
                 await self._handle_juice_search(message, params.get("query", ""))
 
             elif intent == "juice_lyric_search":
+                logger.info(f"🎵 Routing to juice_lyric_search handler")
                 await self._handle_juice_lyric_search(message, params.get("phrase", ""))
 
             elif intent == "juice_song_info":
@@ -156,10 +192,12 @@ class CommandHandler:
             # ============ LEGACY MUSIC INTENTS (ROUTED TO JUICE BY DEFAULT) ============
             elif intent == "music_lyrics":
                 api_source = intent_result.get("api_source")
+                logger.info(f"🎵 Routing to music_lyrics handler (api_source: {api_source})")
                 await self._handle_music_lyrics(message, params.get("query", params.get("rest", "")), api_source)
 
             elif intent == "music_search":
                 api_source = intent_result.get("api_source")
+                logger.info(f"🎵 Routing to music_search handler (api_source: {api_source})")
                 await self._handle_music_search(message, params.get("query", params.get("rest", "")), api_source)
 
             elif intent == "music_artist":
@@ -633,39 +671,60 @@ class CommandHandler:
     # ============ JUICE WRLD PRIMARY INTENT HANDLERS ============
 
     async def _handle_juice_search(self, message: discord.Message, query: str) -> None:
+        """
+        Handle Juice WRLD song search requests
+
+        Args:
+            message: Discord message object
+            query: Search query (song title, ID, etc.)
+        """
+        logger.info(f"🔍 Juice WRLD search requested: '{query}' by user {message.author.id}")
+        
         if not query:
             await message.reply("What song would you like to search for?")
             return
 
         if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            logger.error("Juice WRLD API is not initialized!")
             await message.reply("❌ Juice WRLD API is not available right now.")
             return
 
         async with message.channel.typing():
             # If a numeric ID is provided, jump directly to details
             if query.strip().isdigit():
+                logger.info(f"📝 Fetching Juice WRLD song by ID: {query}")
                 song = await self.bot.juice_wrld_api.get_song(int(query.strip()))
                 if not song:
+                    logger.warning(f"No song found for ID: {query}")
                     await message.reply(f"❌ No song found for ID: {query}")
                     return
+                logger.info(f"✅ Found song by ID: {song.get('title')}")
                 await message.reply(embed=create_discord_juice_wrld_embed(song=song))
                 return
 
+            logger.info(f"📝 Searching Juice WRLD API for: '{query}'")
             songs = await self.bot.juice_wrld_api.search_songs(query, limit=10)
+            
             if not songs:
+                logger.warning(f"No Juice WRLD songs found for: {query}")
                 await message.reply(f"❌ No Juice WRLD songs found for: **{query}**")
                 return
+
+            logger.info(f"✅ Found {len(songs)} songs matching '{query}'")
 
             # If the top result matches strongly, show full details (test checklist expectation)
             if songs and self._is_strong_title_match(query, songs[0].get("title", "")):
                 song_id = songs[0].get("id")
                 if song_id is not None:
+                    logger.info(f"📝 Fetching full details for strong match: {songs[0].get('title')}")
                     details = await self.bot.juice_wrld_api.get_song(song_id)
                     if details:
+                        logger.info(f"✅ Sending Juice WRLD song details for: {details.get('title')}")
                         await message.reply(embed=create_discord_juice_wrld_embed(song=details))
                         return
 
             # Otherwise show a results embed
+            logger.info(f"✅ Sending Juice WRLD search results embed with {len(songs)} songs")
             await message.reply(embed=create_discord_juice_wrld_search_embed(query=query, songs=songs))
 
     async def _handle_juice_lyric_search(self, message: discord.Message, phrase: str) -> None:
@@ -967,6 +1026,8 @@ class CommandHandler:
             query: Search query (song title, artist, etc.)
             api_source: API source recommendation from intent detector
         """
+        logger.info(f"🎵 Music lyrics requested: '{query}' (api_source: {api_source}) by user {message.author.id}")
+        
         if not query:
             await message.reply("What song's lyrics would you like me to find?")
             return
@@ -980,6 +1041,7 @@ class CommandHandler:
                 should_try_genius = False
 
                 if api_source == "juice_wrld":
+                    logger.info(f"📝 Routing lyrics request to Juice WRLD API for: '{query}'")
                     # Use Juice WRLD API first (primary). Genius is backup for Juice WRLD songs only.
                     if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
                         await message.reply("⚠️ Juice WRLD API is unavailable, trying Genius backup...")
@@ -1128,6 +1190,8 @@ class CommandHandler:
             query: Search query
             api_source: API source recommendation from intent detector
         """
+        logger.info(f"🎵 Music search requested: '{query}' (api_source: {api_source}) by user {message.author.id}")
+        
         if not query:
             await message.reply("What would you like me to search for?")
             return
@@ -1137,6 +1201,7 @@ class CommandHandler:
                 # Determine API based on request type
                 # SoundCloud: Only for explicit SoundCloud track discovery
                 if api_source == "soundcloud":
+                    logger.info(f"📝 Routing search request to SoundCloud API for: '{query}'")
                     # Use SoundCloud for track discovery ONLY on SoundCloud platform
                     if not hasattr(self.bot, 'soundcloud_api') or self.bot.soundcloud_api is None:
                         await message.reply(
@@ -1188,7 +1253,9 @@ class CommandHandler:
 
                 elif api_source == "juice_wrld":
                     # Juice WRLD API is the primary music source
+                    logger.info(f"📝 Delegating to Juice WRLD handler for: '{query}'")
                     await self._handle_juice_search(message, query)
+                    logger.info(f"✅ Juice WRLD handler completed for: '{query}'")
                     return
 
                 elif api_source == "genius" or api_source is None:
