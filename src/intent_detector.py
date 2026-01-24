@@ -18,21 +18,21 @@ class IntentDetector:
     Detects user intent from natural language messages using keyword patterns
     """
 
-    # Intent definitions with keywords and patterns
+    # Intent definitions with keywords and patterns (ordered by specificity)
     INTENTS = {
         "clear_memory": {
             "keywords": [
                 "clear my memory", "clear memory", "erase memory", "forget everything",
                 "reset memory", "wipe memory", "clear conversation", "reset conversation",
-                "start over", "new conversation", "forget everything", "clear history"
+                "start over", "new conversation", "clear history"
             ],
             "patterns": [
-                r"clear\s+(my\s+)?memory",
-                r"erase\s+(my\s+)?memory",
-                r"forget\s+everything",
-                r"reset\s+(my\s+)?(memory|conversation)",
-                r"wipe\s+(my\s+)?memory",
-                r"start\s+over"
+                r"\bclear\s+(my\s+)?memory\b",
+                r"\berase\s+(my\s+)?memory\b",
+                r"\bforget\s+everything\b",
+                r"\breset\s+(my\s+)?(memory|conversation)\b",
+                r"\bwipe\s+(my\s+)?memory\b",
+                r"\bstart\s+over\b"
             ],
             "confidence": 0.9
         },
@@ -43,90 +43,16 @@ class IntentDetector:
                 "what have we discussed", "what did we talk about", "show history"
             ],
             "patterns": [
-                r"what\s+do\s+you\s+remember",
-                r"show\s+(my\s+)?memory",
-                r"my\s+memory",
-                r"show\s+conversation",
-                r"what\s+do\s+you\s+know",
-                r"conversation\s+history",
-                r"what\s+have\s+we\s+discussed",
-                r"what\s+did\s+we\s+talk\s+about"
+                r"\bwhat\s+do\s+you\s+remember\b",
+                r"\bshow\s+(my\s+)?memory\b",
+                r"\bmy\s+memory\b",
+                r"\bshow\s+conversation\b",
+                r"\bwhat\s+do\s+you\s+know\b",
+                r"\bconversation\s+history\b",
+                r"\bwhat\s+have\s+we\s+discussed\b",
+                r"\bwhat\s+did\s+we\s+talk\s+about\b"
             ],
             "confidence": 0.85
-        },
-        "search": {
-            "keywords": [
-                "search for", "look up", "find", "research", "google",
-                "search about", "find information about", "look for"
-            ],
-            "patterns": [
-                r"search\s+(for\s+)?(.+)",
-                r"look\s+up\s+(.+)",
-                r"find\s+(.+)",
-                r"research\s+(.+)",
-                r"google\s+(.+)"
-            ],
-            "confidence": 0.9,
-            "extract_param": True
-        },
-        "model_switch": {
-            "keywords": [
-                "use model", "switch to", "change model", "switch model",
-                "use gemini", "use cerebras", "use groq", "use mistral",
-                "change to"
-            ],
-            "patterns": [
-                r"use\s+(?:model\s+)?(.+)",
-                r"switch\s+(?:to\s+)?(?:model\s+)?(.+)",
-                r"change\s+(?:to\s+)?(?:model\s+)?(.+)"
-            ],
-            "confidence": 0.85,
-            "extract_param": True
-        },
-        "model_list": {
-            "keywords": [
-                "available models", "what models", "list models", "which models",
-                "show models", "what ai models", "what models can you use"
-            ],
-            "patterns": [
-                r"available\s+models",
-                r"what\s+models",
-                r"list\s+models",
-                r"which\s+models",
-                r"show\s+models",
-                r"what\s+ai\s+models"
-            ],
-            "confidence": 0.9
-        },
-        "status": {
-            "keywords": [
-                "status", "how are you", "how are you doing", "stats",
-                "bot status", "system status", "health check"
-            ],
-            "patterns": [
-                r"status",
-                r"how\s+are\s+you",
-                r"how\s+are\s+you\s+doing",
-                r"stats",
-                r"bot\s+status",
-                r"system\s+status",
-                r"health\s+check"
-            ],
-            "confidence": 0.85
-        },
-        "remember_preference": {
-            "keywords": [
-                "remember that", "note that", "i prefer", "preference",
-                "keep in mind", "remember this"
-            ],
-            "patterns": [
-                r"remember\s+(?:that\s+)?(.+)",
-                r"note\s+(?:that\s+)?(.+)",
-                r"i\s+prefer\s+(.+)",
-                r"keep\s+in\s+mind\s+(.+)"
-            ],
-            "confidence": 0.85,
-            "extract_param": True
         },
         "clear_specific": {
             "keywords": [
@@ -134,10 +60,10 @@ class IntentDetector:
                 "clear last"
             ],
             "patterns": [
-                r"forget\s+last\s+(\d+)\s+messages?",
-                r"remove\s+last\s+(\d+)\s+messages?",
-                r"delete\s+last\s+(\d+)\s+messages?",
-                r"clear\s+last\s+(\d+)\s+messages?"
+                r"\bforget\s+last\s+(\d+)\s+messages?\b",
+                r"\bremove\s+last\s+(\d+)\s+messages?\b",
+                r"\bdelete\s+last\s+(\d+)\s+messages?\b",
+                r"\bclear\s+last\s+(\d+)\s+messages?\b"
             ],
             "confidence": 0.9,
             "extract_param": True
@@ -148,9 +74,8 @@ class IntentDetector:
                 "show me lyrics", "get lyrics", "find lyrics"
             ],
             "patterns": [
-                r"lyrics?\s+(?:for\s+)?(.+)",
-                r"words?\s+to\s+(.+)",
-                r"what\s+are\s+the\s+lyrics?\s+for\s+(.+)"
+                r"\b(?:lyrics?|words?)\s+(?:for\s+)?([^?]+)",
+                r"\bwhat\s+are\s+the\s+lyrics?\s+for\s+([^?]+)"
             ],
             "confidence": 0.85,
             "extract_param": True
@@ -161,14 +86,14 @@ class IntentDetector:
                 "embed", "soundcloud", "find music", "search music"
             ],
             "patterns": [
-                r"find\s+(?:a\s+)?song\s+(?:by\s+)?(.+)",
-                r"search\s+(?:for\s+)?(?:a\s+)?song\s+(?:by\s+)?(.+)",
-                r"what(?:'s|s)?\s+the\s+song\s+(?:that\s+goes\s+)?(.+)",
-                r"play\s+(.+)",
-                r"embed\s+(.+)",
-                r"soundcloud\s+(.+)",
-                r"find\s+music\s+(.+)",
-                r"search\s+music\s+(.+)"
+                r"\bfind\s+(?:a\s+)?song\s+(?:by\s+)?([^?]+)",
+                r"\bsearch\s+(?:for\s+)?(?:a\s+)?song\s+(?:by\s+)?([^?]+)",
+                r"\bwhat(?:'s|s)?\s+the\s+song\s+(?:that\s+goes\s+)?([^?]+)",
+                r"\bplay\s+([^?]+)",
+                r"\bembed\s+([^?]+)",
+                r"\bsoundcloud\s+([^?]+)",
+                r"\bfind\s+music\s+([^?]+)",
+                r"\bsearch\s+music\s+([^?]+)"
             ],
             "confidence": 0.8,
             "extract_param": True
@@ -179,26 +104,101 @@ class IntentDetector:
                 "musician", "band", "artist info", "artist bio"
             ],
             "patterns": [
-                r"tell\s+me\s+about\s+(.+)",
-                r"who\s+is\s+(.+)",
-                r"artist\s+info\s+for\s+(.+)",
-                r"artist\s+bio\s+for\s+(.+)"
+                r"\btell\s+me\s+about\s+([^?]+)",
+                r"\bwho\s+is\s+([^?]+)",
+                r"\bartist\s+info\s+for\s+([^?]+)",
+                r"\bartist\s+bio\s+for\s+([^?]+)"
             ],
             "confidence": 0.85,
             "extract_param": True
         },
         "music_annotation": {
             "keywords": [
-                "what does", "meaning of", "explain", "annotation",
-                "what's the meaning", "interpretation"
+                "what does", "meaning of", "annotation",
+                "what's the meaning", "interpretation", "explain lyrics"
             ],
             "patterns": [
-                r"what\s+does\s+(.+)\s+mean",
-                r"meaning\s+of\s+(.+)",
-                r"explain\s+(.+)",
-                r"what(?:'s|s)\s+the\s+meaning\s+of\s+(.+)"
+                r"\bwhat\s+does\s+([^?]+)\s+mean\b",
+                r"\bmeaning\s+of\s+([^?]+)",
+                r"\bexplain\s+(?:lyrics?|song)\s+([^?]+)",
+                r"\bwhat(?:'s|s)\s+the\s+meaning\s+of\s+([^?]+)",
+                r"\bannotation\s+for\s+([^?]+)"
             ],
             "confidence": 0.8,
+            "extract_param": True
+        },
+        "model_switch": {
+            "keywords": [
+                "use model", "switch to", "change model", "switch model",
+                "use gemini", "use cerebras", "use groq", "use mistral",
+                "change to"
+            ],
+            "patterns": [
+                r"\buse\s+(?:model\s+)?([^?]+)",
+                r"\bswitch\s+(?:to\s+)?(?:model\s+)?([^?]+)",
+                r"\bchange\s+(?:to\s+)?(?:model\s+)?([^?]+)"
+            ],
+            "confidence": 0.85,
+            "extract_param": True
+        },
+        "model_list": {
+            "keywords": [
+                "available models", "what models", "list models", "which models",
+                "show models", "what ai models", "what models can you use"
+            ],
+            "patterns": [
+                r"\bavailable\s+models\b",
+                r"\bwhat\s+models\b",
+                r"\blist\s+models\b",
+                r"\bwhich\s+models\b",
+                r"\bshow\s+models\b",
+                r"\bwhat\s+ai\s+models\b"
+            ],
+            "confidence": 0.9
+        },
+        "status": {
+            "keywords": [
+                "status", "how are you", "how are you doing", "stats",
+                "bot status", "system status", "health check"
+            ],
+            "patterns": [
+                r"\bstatus\b",
+                r"\bhow\s+are\s+you\b(?!\s+doing)",
+                r"\bhow\s+are\s+you\s+doing\b",
+                r"\bstats\b",
+                r"\bbot\s+status\b",
+                r"\bsystem\s+status\b",
+                r"\bhealth\s+check\b"
+            ],
+            "confidence": 0.85
+        },
+        "remember_preference": {
+            "keywords": [
+                "remember that", "note that", "i prefer", "preference",
+                "keep in mind", "remember this"
+            ],
+            "patterns": [
+                r"\bremember\s+(?:that\s+)?([^?]+)",
+                r"\bnote\s+(?:that\s+)?([^?]+)",
+                r"\bi\s+prefer\s+([^?]+)",
+                r"\bkeep\s+in\s+mind\s+([^?]+)"
+            ],
+            "confidence": 0.85,
+            "extract_param": True
+        },
+        "search": {
+            "keywords": [
+                "search for", "look up", "find", "research", "google",
+                "search about", "find information about", "look for"
+            ],
+            "patterns": [
+                r"\bsearch\s+(for\s+)?([^?]+)",
+                r"\blook\s+up\s+([^?]+)",
+                r"\bfind\s+([^?]+)",
+                r"\bresearch\s+([^?]+)",
+                r"\bgoogle\s+([^?]+)"
+            ],
+            "confidence": 0.9,
             "extract_param": True
         }
     }
@@ -219,25 +219,22 @@ class IntentDetector:
             - api_source: Recommended API source (music intents only)
         """
         message_lower = message.lower().strip()
+        
+        logger.debug(f"Classifying intent for message: '{message}'")
 
         # Check each intent
         for intent_name, intent_data in IntentDetector.INTENTS.items():
-            # Check keyword matches
-            keyword_match = False
-            for keyword in intent_data["keywords"]:
-                if keyword in message_lower:
-                    keyword_match = True
-                    break
-
+            # Check keyword matches first (more precise)
+            keyword_match = IntentDetector._check_keyword_match(message_lower, intent_data["keywords"])
+            
             # Check pattern matches
-            pattern_match = False
-            matched_pattern = None
-            if "patterns" in intent_data:
-                for pattern in intent_data["patterns"]:
-                    if re.search(pattern, message_lower, re.IGNORECASE):
-                        pattern_match = True
-                        matched_pattern = pattern
-                        break
+            pattern_match, matched_pattern = IntentDetector._check_pattern_match(message_lower, intent_data.get("patterns", []))
+
+            # Log matches for debugging
+            if keyword_match:
+                logger.debug(f"Keyword match for intent '{intent_name}'")
+            if pattern_match:
+                logger.debug(f"Pattern match for intent '{intent_name}': {matched_pattern}")
 
             # If either keyword or pattern matches
             if keyword_match or pattern_match:
@@ -245,7 +242,7 @@ class IntentDetector:
 
                 # Extract parameters if needed
                 params = {}
-                if intent_data.get("extract_param", False) and matched_pattern:
+                if intent_data.get("extract_param", False):
                     params = IntentDetector._extract_parameters(message_lower, intent_name, matched_pattern)
 
                 # Determine API source for music intents
@@ -253,7 +250,7 @@ class IntentDetector:
                 if intent_name.startswith("music_"):
                     api_source = IntentDetector.determine_api_source(message_lower)
 
-                logger.debug(f"Detected intent: {intent_name} (confidence: {confidence}, api_source: {api_source})")
+                logger.info(f"Detected intent: {intent_name} (confidence: {confidence}, api_source: {api_source})")
                 return {
                     "intent": intent_name,
                     "confidence": confidence,
@@ -262,12 +259,60 @@ class IntentDetector:
                 }
 
         # No special intent detected - default to chat
+        logger.debug("No intent detected - defaulting to chat")
         return {
             "intent": "chat",
             "confidence": 1.0,
             "params": {},
             "api_source": None
         }
+
+    @staticmethod
+    def _check_keyword_match(message: str, keywords: List[str]) -> bool:
+        """
+        Check if any keyword matches the message using word boundaries
+        
+        Args:
+            message: Lowercase message
+            keywords: List of keywords to check
+            
+        Returns:
+            True if any keyword matches
+        """
+        # Remove common punctuation that might interfere
+        message_clean = re.sub(r'[^\w\s]', ' ', message)
+        
+        for keyword in keywords:
+            keyword_clean = re.sub(r'[^\w\s]', ' ', keyword.lower())
+            
+            # Use word boundaries to ensure we match whole words
+            pattern = r'\b' + re.escape(keyword_clean) + r'\b'
+            if re.search(pattern, message_clean):
+                return True
+                
+        return False
+
+    @staticmethod
+    def _check_pattern_match(message: str, patterns: List[str]) -> tuple:
+        """
+        Check if any pattern matches the message
+        
+        Args:
+            message: Lowercase message
+            patterns: List of regex patterns
+            
+        Returns:
+            Tuple of (bool, matched_pattern)
+        """
+        for pattern in patterns:
+            try:
+                if re.search(pattern, message, re.IGNORECASE):
+                    return True, pattern
+            except re.error as e:
+                logger.warning(f"Invalid regex pattern '{pattern}': {e}")
+                continue
+                
+        return False, None
 
     @staticmethod
     def determine_api_source(message: str) -> Optional[str]:
@@ -327,29 +372,41 @@ class IntentDetector:
         params = {}
 
         try:
+            match = re.search(pattern, message, re.IGNORECASE)
+            if not match:
+                return params
+
             if intent == "search":
-                # Extract search query
-                match = re.search(pattern, message, re.IGNORECASE)
-                if match:
-                    params["query"] = match.group(2) if match.lastindex >= 1 else match.group(1)
+                # Extract search query - use last non-empty group
+                if match.lastindex and match.lastindex >= 1:
+                    # Find the last capturing group that has content
+                    for i in range(match.lastindex, 0, -1):
+                        group_content = match.group(i).strip()
+                        if group_content:
+                            params["query"] = group_content
+                            break
 
             elif intent == "model_switch":
                 # Extract model name
-                match = re.search(pattern, message, re.IGNORECASE)
-                if match and match.lastindex:
+                if match.lastindex and match.lastindex >= 1:
                     params["model_name"] = match.group(1).strip()
 
             elif intent == "remember_preference":
                 # Extract preference
-                match = re.search(pattern, message, re.IGNORECASE)
-                if match and match.lastindex:
+                if match.lastindex and match.lastindex >= 1:
                     params["preference"] = match.group(1).strip()
 
             elif intent == "clear_specific":
                 # Extract number of messages
-                match = re.search(pattern, message, re.IGNORECASE)
-                if match and match.lastindex:
+                if match.lastindex and match.lastindex >= 1:
                     params["count"] = int(match.group(1))
+
+            elif intent in ["music_lyrics", "music_search", "music_artist", "music_annotation"]:
+                # Extract song/artist name
+                if match.lastindex and match.lastindex >= 1:
+                    params["query"] = match.group(1).strip()
+
+            logger.debug(f"Extracted parameters for {intent}: {params}")
 
         except Exception as e:
             logger.warning(f"Error extracting parameters for intent {intent}: {e}")
