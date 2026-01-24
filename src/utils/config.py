@@ -156,7 +156,7 @@ class Config:
         missing_music_apis = [name for name, value in music_api_keys.items() if not value]
         if missing_music_apis:
             logger.warning(f"Missing music API keys: {', '.join(missing_music_apis)}")
-            logger.info("Music features will be unavailable until keys are provided")
+            logger.info("Some music features (Genius lyrics fallback / SoundCloud) will be unavailable until keys are provided. Juice WRLD API does not require keys.")
     
     def get_debug_info(self) -> dict:
         """

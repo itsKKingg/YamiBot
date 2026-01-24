@@ -8,7 +8,7 @@ Routes intents detected by IntentDetector to appropriate actions.
 import discord
 from discord import app_commands
 from discord.ext import commands
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Tuple
 import asyncio
 
 from .utils.logger import setup_logging
@@ -17,12 +17,14 @@ from .message_validator import MessageValidator
 from .formatting.music_formatter import (
     format_lyrics_card,
     format_song_card,
-    format_song_list,
-    format_artist_info,
-    format_soundcloud_track_details,
-    create_discord_embed,
     create_discord_genius_embed,
     create_discord_juice_wrld_embed,
+    create_discord_juice_wrld_search_embed,
+    create_discord_juice_wrld_song_list_embed,
+    create_discord_juice_wrld_lyric_search_embed,
+    create_discord_juice_wrld_stats_embed,
+    create_discord_juice_wrld_eras_embeds,
+    create_discord_juice_wrld_cover_art_embed,
 )
 
 logger = setup_logging(__name__)
@@ -109,6 +111,49 @@ class CommandHandler:
             elif intent == "clear_specific":
                 await self._handle_clear_specific(message, params.get("count", 0))
 
+            # ============ JUICE WRLD API INTENTS (PRIMARY MUSIC SOURCE) ============
+            elif intent == "juice_search":
+                await self._handle_juice_search(message, params.get("query", ""))
+
+            elif intent == "juice_lyric_search":
+                await self._handle_juice_lyric_search(message, params.get("phrase", ""))
+
+            elif intent == "juice_song_info":
+                await self._handle_juice_song_info(
+                    message,
+                    song_query=params.get("query"),
+                    song_id=params.get("song_id"),
+                    info_type=params.get("info_type", "details"),
+                )
+
+            elif intent == "juice_eras_list":
+                await self._handle_juice_eras_list(message)
+
+            elif intent == "juice_era_filter":
+                await self._handle_juice_era_filter(message, params.get("era", ""))
+
+            elif intent == "juice_category_filter":
+                await self._handle_juice_category_filter(message, params.get("category", ""))
+
+            elif intent == "juice_random":
+                await self._handle_juice_random(message)
+
+            elif intent == "juice_stats":
+                await self._handle_juice_stats(message)
+
+            elif intent == "juice_cover_art":
+                await self._handle_juice_cover_art(message, params.get("query", ""))
+
+            elif intent == "juice_stream":
+                await self._handle_juice_stream(message, params.get("query", ""))
+
+            elif intent == "juice_collection":
+                await self._handle_juice_collection(message, params.get("query", ""))
+
+            elif intent == "juice_producer_filter":
+                await self._handle_juice_producer_filter(message, params.get("producer", ""))
+
+            # ============ LEGACY MUSIC INTENTS (ROUTED TO JUICE BY DEFAULT) ============
             elif intent == "music_lyrics":
                 api_source = intent_result.get("api_source")
                 await self._handle_music_lyrics(message, params.get("query", params.get("rest", "")), api_source)
@@ -487,6 +532,427 @@ class CommandHandler:
 
     # ============ MUSIC COMMAND HANDLERS ============
 
+    def _looks_like_year(self, value: str) -> bool:
+        value = (value or "").strip()
+        return len(value) == 4 and value.isdigit() and 1900 <= int(value) <= 2100
+
+    @staticmethod
+    def _normalize_match_text(text: str) -> str:
+        import re
+
+        t = (text or "").lower().strip()
+        t = re.sub(r"[^a-z0-9\s]", " ", t)
+        t = re.sub(r"\s+", " ", t)
+        return t
+
+    @classmethod
+    def _is_strong_title_match(cls, query: str, title: str) -> bool:
+        q = cls._normalize_match_text(query)
+        t = cls._normalize_match_text(title)
+        return q == t or q in t or t in q
+
+    async def _resolve_juice_song(
+        self,
+        *,
+        song_query: Optional[str] = None,
+        song_id: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            return {}
+
+        if song_id is not None:
+            return await self.bot.juice_wrld_api.get_song(song_id)
+
+        if not song_query:
+            return {}
+
+        q = song_query.strip()
+        if q.isdigit():
+            return await self.bot.juice_wrld_api.get_song(int(q))
+
+        songs = await self.bot.juice_wrld_api.search_songs(q, limit=5)
+        if not songs:
+            return {}
+
+        best = songs[0]
+        # Prefer exact-ish title matches
+        for s in songs:
+            if self._is_strong_title_match(q, s.get("title", "")):
+                best = s
+                break
+
+        best_id = best.get("id")
+        if best_id is not None:
+            details = await self.bot.juice_wrld_api.get_song(best_id)
+            return details or best
+
+        return best
+
+    async def _resolve_era(self, era_query: str) -> Tuple[Optional[Any], Optional[Dict[str, Any]]]:
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            return None, None
+
+        eras = await self.bot.juice_wrld_api.list_eras()
+        if not eras:
+            return None, None
+
+        q = (era_query or "").strip()
+        if not q:
+            return None, None
+
+        if q.isdigit():
+            for era in eras:
+                if str(era.get("id")) == q:
+                    return era.get("id"), era
+            return q, None
+
+        qn = q.lower()
+        best = None
+        for era in eras:
+            name = (era.get("name") or "").lower()
+            if not name:
+                continue
+            if qn == name or qn in name or name in qn:
+                best = era
+                break
+
+        if best:
+            return best.get("id"), best
+
+        return None, None
+
+    def _is_probably_juice_query(self, query: str) -> bool:
+        q = (query or "").lower()
+        if "juice" in q or "wrld" in q or "juice wrld" in q:
+            return True
+        # If it doesn't mention another artist, assume Juice for this bot's music mode
+        if " by " in q and not any(x in q for x in ["juice", "wrld"]):
+            return False
+        return True
+
+    # ============ JUICE WRLD PRIMARY INTENT HANDLERS ============
+
+    async def _handle_juice_search(self, message: discord.Message, query: str) -> None:
+        if not query:
+            await message.reply("What song would you like to search for?")
+            return
+
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            await message.reply("❌ Juice WRLD API is not available right now.")
+            return
+
+        async with message.channel.typing():
+            # If a numeric ID is provided, jump directly to details
+            if query.strip().isdigit():
+                song = await self.bot.juice_wrld_api.get_song(int(query.strip()))
+                if not song:
+                    await message.reply(f"❌ No song found for ID: {query}")
+                    return
+                await message.reply(embed=create_discord_juice_wrld_embed(song=song))
+                return
+
+            songs = await self.bot.juice_wrld_api.search_songs(query, limit=10)
+            if not songs:
+                await message.reply(f"❌ No Juice WRLD songs found for: **{query}**")
+                return
+
+            # If the top result matches strongly, show full details (test checklist expectation)
+            if songs and self._is_strong_title_match(query, songs[0].get("title", "")):
+                song_id = songs[0].get("id")
+                if song_id is not None:
+                    details = await self.bot.juice_wrld_api.get_song(song_id)
+                    if details:
+                        await message.reply(embed=create_discord_juice_wrld_embed(song=details))
+                        return
+
+            # Otherwise show a results embed
+            await message.reply(embed=create_discord_juice_wrld_search_embed(query=query, songs=songs))
+
+    async def _handle_juice_lyric_search(self, message: discord.Message, phrase: str) -> None:
+        if not phrase:
+            await message.reply("What lyric phrase should I search for?")
+            return
+
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            await message.reply("❌ Juice WRLD API is not available right now.")
+            return
+
+        async with message.channel.typing():
+            songs = await self.bot.juice_wrld_api.lyric_search(phrase, limit=10)
+            embed = create_discord_juice_wrld_lyric_search_embed(phrase=phrase, songs=songs)
+            await message.reply(embed=embed)
+
+    async def _handle_juice_song_info(
+        self,
+        message: discord.Message,
+        *,
+        song_query: Optional[str],
+        song_id: Optional[int],
+        info_type: str,
+    ) -> None:
+        if not song_query and song_id is None:
+            await message.reply("Which song are you asking about?")
+            return
+
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            await message.reply("❌ Juice WRLD API is not available right now.")
+            return
+
+        async with message.channel.typing():
+            song = await self._resolve_juice_song(song_query=song_query, song_id=song_id)
+            if not song:
+                await message.reply("❌ I couldn't find that song in the Juice WRLD database.")
+                return
+
+            info_type = (info_type or "details").lower()
+
+            if info_type == "producer":
+                producers = song.get("producers") or []
+                if not producers:
+                    await message.reply("❌ Producer credits not available for this track.")
+                    return
+                embed = create_discord_juice_wrld_embed(song=song)
+                await message.reply(content=f"🏭 **Producer(s):** {', '.join(producers)}", embed=embed)
+                return
+
+            if info_type in {"studio", "recording_date"}:
+                studio = song.get("studio_location") or "Unknown studio/location"
+                rec_date = song.get("recording_date") or "Unknown date"
+                await message.reply(f"📍 **Recorded at** {studio} **on** {rec_date}.")
+                # Also provide the full card
+                await message.channel.send(embed=create_discord_juice_wrld_embed(song=song))
+                return
+
+            # Default: full details
+            await message.reply(embed=create_discord_juice_wrld_embed(song=song))
+
+    async def _handle_juice_eras_list(self, message: discord.Message) -> None:
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            await message.reply("❌ Juice WRLD API is not available right now.")
+            return
+
+        async with message.channel.typing():
+            eras = await self.bot.juice_wrld_api.list_eras()
+            embeds = create_discord_juice_wrld_eras_embeds(eras)
+            if not embeds:
+                await message.reply("❌ No era data available.")
+                return
+
+            await message.reply(embed=embeds[0])
+            for e in embeds[1:]:
+                await message.channel.send(embed=e)
+
+    async def _handle_juice_era_filter(self, message: discord.Message, era_query: str) -> None:
+        if not era_query:
+            await message.reply("Which era (name or ID) should I filter by?")
+            return
+
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            await message.reply("❌ Juice WRLD API is not available right now.")
+            return
+
+        async with message.channel.typing():
+            # Year routing: map year → matching eras by timeframe
+            if self._looks_like_year(era_query):
+                year = int(era_query.strip())
+                eras = await self.bot.juice_wrld_api.list_eras()
+                matched = []
+                for era in eras:
+                    s = str(era.get("start_date") or "")
+                    e = str(era.get("end_date") or "")
+                    if str(year) in s or str(year) in e:
+                        matched.append(era)
+
+                if not matched:
+                    await message.reply(f"❌ No eras found matching year {year}.")
+                    return
+
+                # Fetch songs for the first matching era (and mention others)
+                era = matched[0]
+                era_id = era.get("id")
+                songs = await self.bot.juice_wrld_api.filter_songs(era=era_id, limit=25)
+                subtitle = f"Filtered by year **{year}** → era **{era.get('name')}**"
+                await message.reply(embed=create_discord_juice_wrld_song_list_embed("🎭 Songs by Year", songs, subtitle=subtitle))
+                return
+
+            era_id, era_obj = await self._resolve_era(era_query)
+            if era_id is None:
+                await message.reply(f"❌ I couldn't find an era matching: **{era_query}**")
+                return
+
+            songs = await self.bot.juice_wrld_api.filter_songs(era=era_id, limit=25)
+            subtitle = None
+            if era_obj:
+                subtitle = f"_{era_obj.get('start_date')} → {era_obj.get('end_date')}_"
+            await message.reply(
+                embed=create_discord_juice_wrld_song_list_embed(
+                    title=f"🎭 Songs from {era_obj.get('name') if era_obj else era_query}",
+                    songs=songs,
+                    subtitle=subtitle,
+                )
+            )
+
+    async def _handle_juice_category_filter(self, message: discord.Message, category: str) -> None:
+        if not category:
+            await message.reply("Which category? (released / unreleased / unsurfaced / studio_session)")
+            return
+
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            await message.reply("❌ Juice WRLD API is not available right now.")
+            return
+
+        cat = category.strip().lower().replace(" ", "_")
+        if cat == "studio_sessions":
+            cat = "studio_session"
+
+        async with message.channel.typing():
+            # Unreleased database mode: include unsurfaced too (feature #14)
+            if cat == "unreleased":
+                unreleased = await self.bot.juice_wrld_api.filter_songs(category="unreleased", limit=25)
+                unsurfaced = await self.bot.juice_wrld_api.filter_songs(category="unsurfaced", limit=25)
+                # Merge by ID when possible
+                seen = set()
+                merged = []
+                for s in unreleased + unsurfaced:
+                    sid = s.get("id")
+                    if sid is not None and sid in seen:
+                        continue
+                    if sid is not None:
+                        seen.add(sid)
+                    merged.append(s)
+                await message.reply(
+                    embed=create_discord_juice_wrld_song_list_embed(
+                        title="🟣 Unreleased + Unsurfaced Database",
+                        songs=merged,
+                        subtitle=f"Showing {min(len(merged), 25)} results (combined)",
+                    )
+                )
+                return
+
+            songs = await self.bot.juice_wrld_api.filter_songs(category=cat, limit=25)
+            await message.reply(
+                embed=create_discord_juice_wrld_song_list_embed(
+                    title=f"📁 Category: {cat.replace('_', ' ').title()}",
+                    songs=songs,
+                )
+            )
+
+    async def _handle_juice_random(self, message: discord.Message) -> None:
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            await message.reply("❌ Juice WRLD API is not available right now.")
+            return
+
+        async with message.channel.typing():
+            song = await self.bot.juice_wrld_api.random_song()
+            if not song:
+                await message.reply("❌ Couldn't fetch a random track right now.")
+                return
+            await message.reply(embed=create_discord_juice_wrld_embed(song=song))
+
+    async def _handle_juice_stats(self, message: discord.Message) -> None:
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            await message.reply("❌ Juice WRLD API is not available right now.")
+            return
+
+        async with message.channel.typing():
+            stats = await self.bot.juice_wrld_api.get_stats()
+            await message.reply(embed=create_discord_juice_wrld_stats_embed(stats))
+
+    async def _handle_juice_cover_art(self, message: discord.Message, query: str) -> None:
+        if not query:
+            await message.reply("Which song do you want cover art for?")
+            return
+
+        async with message.channel.typing():
+            song = await self._resolve_juice_song(song_query=query, song_id=None)
+            if not song:
+                await message.reply("❌ Couldn't find that song.")
+                return
+            await message.reply(embed=create_discord_juice_wrld_cover_art_embed(song))
+
+    async def _handle_juice_stream(self, message: discord.Message, query: str) -> None:
+        if not query:
+            await message.reply("Which song do you want a streaming link for?")
+            return
+
+        async with message.channel.typing():
+            song = await self._resolve_juice_song(song_query=query, song_id=None)
+            if not song:
+                await message.reply("❌ Couldn't find that song.")
+                return
+
+            stream_url = song.get("stream_url")
+            if stream_url:
+                await message.reply(content=f"🔗 Listen here: {stream_url}", embed=create_discord_juice_wrld_embed(song=song))
+            else:
+                await message.reply("❌ No streaming link available for this track.")
+
+    async def _handle_juice_collection(self, message: discord.Message, query: str) -> None:
+        if not query:
+            await message.reply("What should I include in the .zip? (comma-separated song titles, or an era name/ID)")
+            return
+
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            await message.reply("❌ Juice WRLD API is not available right now.")
+            return
+
+        async with message.channel.typing():
+            q = query.strip()
+
+            # If multiple songs are provided
+            if "," in q:
+                parts = [p.strip() for p in q.split(",") if p.strip()]
+                song_ids = []
+                for part in parts[:10]:
+                    song = await self._resolve_juice_song(song_query=part, song_id=None)
+                    sid = song.get("id") if song else None
+                    if sid is not None:
+                        song_ids.append(sid)
+
+                if not song_ids:
+                    await message.reply("❌ I couldn't resolve any song IDs for that collection.")
+                    return
+
+                url = await self.bot.juice_wrld_api.generate_archive(song_ids=song_ids)
+                if not url:
+                    await message.reply("❌ Couldn't generate the archive right now.")
+                    return
+
+                await message.reply(f"📦 Your collection is ready: {url}")
+                return
+
+            # Otherwise treat it as an era
+            era_id, era_obj = await self._resolve_era(q.replace(" era", ""))
+            if era_id is None:
+                await message.reply("❌ I couldn't find that era. Try an era name, era ID, or a comma-separated song list.")
+                return
+
+            url = await self.bot.juice_wrld_api.generate_archive(era=era_id)
+            if not url:
+                await message.reply("❌ Couldn't generate the era archive right now.")
+                return
+
+            era_name = era_obj.get("name") if era_obj else str(q)
+            await message.reply(f"📦 **{era_name}** archive ready: {url}")
+
+    async def _handle_juice_producer_filter(self, message: discord.Message, producer: str) -> None:
+        if not producer:
+            await message.reply("Which producer should I filter by?")
+            return
+
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            await message.reply("❌ Juice WRLD API is not available right now.")
+            return
+
+        async with message.channel.typing():
+            songs = await self.bot.juice_wrld_api.filter_songs(producer=producer, limit=25)
+            await message.reply(
+                embed=create_discord_juice_wrld_song_list_embed(
+                    title=f"🏭 Produced by {producer}",
+                    songs=songs,
+                )
+            )
+
     async def _handle_music_lyrics(
         self,
         message: discord.Message,
@@ -514,45 +980,62 @@ class CommandHandler:
                 should_try_genius = False
 
                 if api_source == "juice_wrld":
-                    # Use Juice WRLD API
-                    if not hasattr(self.bot, 'juice_wrld_api') or self.bot.juice_wrld_api is None:
-                        await message.reply("⚠️ Juice WRLD API is not configured. Falling back to Genius.")
+                    # Use Juice WRLD API first (primary). Genius is backup for Juice WRLD songs only.
+                    if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
                         should_try_genius = True
                     else:
                         try:
-                            # Search for songs
-                            logger.info(f"Searching Juice WRLD API for: {query} by user {message.author.id}")
-                            songs = await self.bot.juice_wrld_api.search_songs(query, limit=3)
-
-                            if not songs:
-                                await message.reply(f"❌ No Juice WRLD songs found for: {query}\n\nTrying Genius instead...")
+                            song = await self._resolve_juice_song(song_query=query, song_id=None)
+                            if not song:
                                 should_try_genius = True
-                            elif len(songs) > 0:
-                                # Get the first matching song with full details
-                                song_id = songs[0].get('id')
-                                if song_id:
-                                    song = await self.bot.juice_wrld_api.get_song(song_id)
-
-                                    # Format response using Discord embed
-                                    embed = create_discord_juice_wrld_embed(song=song)
-                                    await message.reply(embed=embed)
-
-                                    logger.info(f"Juice WRLD lyrics retrieved for: {query} by user {message.author.id}")
-                                    return  # Successfully handled, don't fall through
-                                else:
-                                    await message.reply("❌ Could not retrieve Juice WRLD song details. Trying Genius...")
-                                    should_try_genius = True
                             else:
-                                # Should not reach here but fall through to be safe
-                                await message.reply("❌ Could not retrieve Juice WRLD song details.")
+                                lyrics = (song.get("lyrics") or "").strip()
+
+                                if lyrics:
+                                    # Song details as embed
+                                    await message.reply(embed=create_discord_juice_wrld_embed(song=song))
+
+                                    # Send lyrics as plain text (chunked), preserving section labels like [Verse].
+                                    header = f"📜 **LYRICS — {song.get('title', 'Unknown')}**\n"
+                                    content = header + lyrics
+                                    if len(content) > 1900:
+                                        chunks = []
+                                        current_chunk = ""
+                                        for line in content.split("\n"):
+                                            if len(current_chunk) + len(line) + 1 > 1900:
+                                                chunks.append(current_chunk)
+                                                current_chunk = line + "\n"
+                                            else:
+                                                current_chunk += line + "\n"
+                                        if current_chunk:
+                                            chunks.append(current_chunk)
+
+                                        for chunk in chunks:
+                                            await message.channel.send(chunk)
+                                    else:
+                                        await message.channel.send(content)
+
+                                    logger.info(
+                                        f"Juice WRLD lyrics retrieved from Juice WRLD API for: {query} by user {message.author.id}"
+                                    )
+                                    return
+
+                                # No lyrics in Juice WRLD payload - fall back to Genius (backup) if applicable
                                 should_try_genius = True
 
                         except Exception as e:
                             logger.error(f"Error retrieving from Juice WRLD API: {e}", exc_info=True)
-                            await message.reply(f"⚠️ Juice WRLD API error. Falling back to Genius...")
                             should_try_genius = True
 
-                if api_source == "genius" or api_source is None or should_try_genius:
+                if api_source == "genius" or should_try_genius:
+                    # Genius fallback (backup only): only for Juice WRLD songs when Juice WRLD API fails.
+                    if not self._is_probably_juice_query(query):
+                        await message.reply("❌ Genius fallback is only enabled for Juice WRLD songs.")
+                        return
+
+                    if should_try_genius and api_source != "genius":
+                        await message.reply("⚠️ Juice WRLD API couldn't fetch lyrics — trying Genius backup...")
+
                     # Use Genius API (Plain text output only)
                     if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
                         await message.reply("❌ Genius API is not configured. Please set GENIUS_ACCESS_TOKEN in .env")
@@ -685,23 +1168,9 @@ class CommandHandler:
                     return
 
                 elif api_source == "juice_wrld":
-                    # Use Juice WRLD API for general music search
-                    if not hasattr(self.bot, 'juice_wrld_api') or self.bot.juice_wrld_api is None:
-                        await message.reply("❌ Juice WRLD API is not configured")
-                        return
-
-                    # Search for songs
-                    logger.info(f"Searching Juice WRLD API for: {query} by user {message.author.id}")
-                    songs = await self.bot.juice_wrld_api.search_songs(query, limit=5)
-
-                    if not songs:
-                        await message.reply(f"❌ No Juice WRLD songs found for: {query}")
-                        return
-
-                    # Format response using the song list formatter
-                    response = format_song_list(songs)
-                    await message.reply(response)
-                    logger.info(f"Juice WRLD search performed for: {query} by user {message.author.id}")
+                    # Juice WRLD API is the primary music source
+                    await self._handle_juice_search(message, query)
+                    return
 
                 elif api_source == "genius" or api_source is None:
                     # Use Genius for general music search
@@ -757,35 +1226,18 @@ class CommandHandler:
 
         try:
             async with message.channel.typing():
-                # Use Juice WRLD API for artist info if requested
+                # Juice WRLD API is a Juice WRLD song database. For "artist" requests,
+                # we provide database stats (and still allow Genius as an optional fallback).
                 if api_source == "juice_wrld":
-                    if not hasattr(self.bot, 'juice_wrld_api') or self.bot.juice_wrld_api is None:
-                        await message.reply("❌ Juice WRLD API is not configured")
-                        return
-
-                    # Search for artist (assuming the API has search_artists method)
-                    logger.info(f"Searching Juice WRLD API for artist: {query} by user {message.author.id}")
-                    artists = await self.bot.juice_wrld_api.search_artists(query, limit=1)
-
-                    if not artists:
-                        await message.reply(f"❌ No Juice WRLD artist found for: {query}")
-                        return
-
-                    # Get artist details
-                    artist_id = artists[0].get('id')
-                    if artist_id:
-                        artist = await self.bot.juice_wrld_api.get_artist(artist_id)
-
-                        # Format response using Discord embed
-                        embed = create_discord_juice_wrld_embed(artist=artist)
-                        await message.reply(embed=embed)
-
-                        logger.info(f"Juice WRLD artist info retrieved for: {query} by user {message.author.id}")
-                    else:
-                        await message.reply("❌ Could not retrieve Juice WRLD artist details")
+                    await message.reply(
+                        "🎤 The Juice WRLD API focuses on **Juice WRLD songs** rather than general artist profiles.\n"
+                        "Here are the current database stats:"
+                    )
+                    await self._handle_juice_stats(message)
+                    return
 
                 else:
-                    # Fall back to Genius API for artist info (default choice)
+                    # Fall back to Genius API for artist info
                     if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
                         await message.reply("❌ Genius API is not configured")
                         return
@@ -887,7 +1339,7 @@ class CommandHandler:
 
                     # Format annotations
                     song = await self.bot.genius_api.get_song(song_id)
-                    response = format_lyrics_card(song, annotations)
+                    response = format_lyrics_card(song=song, lyrics=None, annotations=annotations)
 
                     await message.reply(response)
                     logger.info(f"Genius annotations retrieved for: {query} by user {message.author.id}")

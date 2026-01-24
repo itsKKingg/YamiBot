@@ -803,129 +803,387 @@ def format_artist_info(artist: Dict) -> str:
     return "\n".join(lines)
 
 
+def _format_duration(duration_value) -> str:
+    if not duration_value:
+        return "Unknown"
+
+    # Already formatted
+    if isinstance(duration_value, str):
+        d = duration_value.strip()
+        if ":" in d:
+            return d
+        # maybe seconds as string
+        if d.isdigit():
+            duration_value = int(d)
+        else:
+            return d
+
+    # seconds
+    if isinstance(duration_value, (int, float)):
+        total_seconds = int(duration_value)
+        minutes, seconds = divmod(total_seconds, 60)
+        if minutes >= 60:
+            hours, minutes = divmod(minutes, 60)
+            return f"{hours}:{minutes:02d}:{seconds:02d}"
+        return f"{minutes}:{seconds:02d}"
+
+    return "Unknown"
+
+
 def create_discord_juice_wrld_embed(
     song: Optional[Dict] = None,
     artist: Optional[Dict] = None
 ) -> discord.Embed:
-    """
-    Create a Discord Embed object for Juice WRLD content
+    """Create a Discord Embed object for Juice WRLD content.
 
-    Args:
-        song: Optional song data from Juice WRLD API
-        artist: Optional artist data from Juice WRLD API
-
-    Returns:
-        Discord Embed object with Juice WRLD branding
+    For songs, this follows the required metadata fields:
+    👤 Artist, 🎵 Album, 📅 Release Date, 🏭 Producer(s), 🎭 Era,
+    📍 Studio Location, ⏱️ Duration, 📊 Status.
     """
     if song:
-        # Song embed
+        stream_url = song.get("stream_url") or song.get("download_url")
+        embed_url = stream_url or song.get("juice_wrld_url") or song.get("genius_url")
+
         embed = discord.Embed(
-            title=song.get('title', 'Unknown Song'),
-            url=song.get('genius_url', song.get('juice_wrld_url')),
-            color=0x6B21A8,  # Juice WRLD purple
-            timestamp=datetime.utcnow()
+            title=song.get("title", "Unknown Song"),
+            url=embed_url,
+            color=0x6B21A8,
+            timestamp=datetime.utcnow(),
         )
 
         embed.set_author(
-            name=song.get('artist', 'Juice WRLD'),
-            icon_url="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Juice_WRLD_in_2019.jpg/440px-Juice_WRLD_in_2019.jpg"
+            name=song.get("artist", "Juice WRLD"),
+            icon_url="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Juice_WRLD_in_2019.jpg/440px-Juice_WRLD_in_2019.jpg",
         )
-
-        # Description with metadata
-        description_lines = []
-
-        if song.get('album'):
-            description_lines.append(f"**Album:** {song.get('album')}")
-
-        if song.get('release_date'):
-            description_lines.append(f"**Released:** {song.get('release_date')}")
-
-        if song.get('producers'):
-            producers = song.get('producers', [])[:3]
-            description_lines.append(f"**Produced by:** {', '.join(producers)}")
-
-        if song.get('features'):
-            features = song.get('features', [])[:3]
-            description_lines.append(f"**Featuring:** {', '.join(features)}")
-
-        # Play count
-        play_count = song.get('play_count', 0)
-        if play_count:
-            description_lines.append(f"**Plays:** {play_count:,}")
-
-        if description_lines:
-            embed.description = "\n".join(description_lines)
 
         # Thumbnail
-        if song.get('image_url') or song.get('artwork_url'):
-            embed.set_thumbnail(url=song.get('image_url') or song.get('artwork_url'))
+        thumb = (
+            song.get("cover_art_url")
+            or song.get("image_url")
+            or song.get("artwork_url")
+            or song.get("artwork")
+        )
+        if thumb:
+            embed.set_thumbnail(url=thumb)
 
-        # Description as field if present
-        description_text = song.get('description', '').strip()
-        if description_text:
-            # Truncate for Discord field limits
-            if len(description_text) > 1000:
-                description_text = description_text[:997] + "..."
-            embed.add_field(name="Description", value=description_text, inline=False)
+        # Description
+        desc = (song.get("description") or "").strip()
+        if desc:
+            embed.description = desc[:500] + "..." if len(desc) > 500 else desc
+        else:
+            status = (song.get("status") or "Unknown").replace("_", " ")
+            era = song.get("era") or "Unknown era"
+            embed.description = f"🎭 **{era}** • 📊 **{status}**"
 
-        embed.set_footer(text="Powered by Juice WRLD API")
+        # Required fields
+        embed.add_field(name="👤 Artist", value=song.get("artist") or "Juice WRLD", inline=True)
+        embed.add_field(name="🎵 Album", value=song.get("album") or "Unknown", inline=True)
+        embed.add_field(name="📅 Release Date", value=song.get("release_date") or "Unknown", inline=True)
+
+        producers = song.get("producers") or []
+        producers_value = ", ".join(producers) if producers else "Unknown"
+        embed.add_field(name="🏭 Producer(s)", value=producers_value[:1024], inline=False)
+
+        embed.add_field(name="🎭 Era", value=song.get("era") or "Unknown", inline=True)
+
+        studio_loc = song.get("studio_location") or "Unknown"
+        rec_date = song.get("recording_date")
+        if rec_date:
+            studio_loc = f"{studio_loc}\n🗓️ {rec_date}"
+        embed.add_field(name="📍 Studio Location", value=studio_loc[:1024], inline=True)
+
+        embed.add_field(name="⏱️ Duration", value=_format_duration(song.get("duration")), inline=True)
+
+        status_val = (song.get("status") or "Unknown").replace("_", " ")
+        embed.add_field(name="📊 Status", value=status_val.title() if status_val else "Unknown", inline=True)
+
+        # Streaming link
+        if stream_url:
+            embed.add_field(name="🔗 Streaming", value=f"[Listen here]({stream_url})", inline=False)
+
+        # Helpful IDs
+        if song.get("id") is not None:
+            embed.set_footer(text=f"Powered by Juice WRLD API • Song ID: {song.get('id')}")
+        else:
+            embed.set_footer(text="Powered by Juice WRLD API")
+
         return embed
 
-    elif artist:
-        # Artist embed
+    if artist:
         embed = discord.Embed(
-            title=f"{artist.get('name', 'Unknown Artist')}",
-            url=artist.get('genius_url', artist.get('juice_wrld_url')),
-            color=0x6B21A8,  # Juice WRLD purple
-            timestamp=datetime.utcnow()
+            title=f"{artist.get('name', 'Juice WRLD')}",
+            url=artist.get("juice_wrld_url") or artist.get("genius_url"),
+            color=0x6B21A8,
+            timestamp=datetime.utcnow(),
         )
 
-        # Stats
         stats_lines = []
-
-        if artist.get('songs_count'):
+        if artist.get("songs_count"):
             stats_lines.append(f"🎵 {artist.get('songs_count', 0):,} songs")
-
-        if artist.get('followers'):
+        if artist.get("followers"):
             stats_lines.append(f"👥 {artist.get('followers', 0):,} followers")
-
-        if artist.get('is_verified'):
+        if artist.get("is_verified"):
             stats_lines.append("✅ Verified")
-
         if stats_lines:
             embed.add_field(name="Stats", value="\n".join(stats_lines), inline=True)
 
-        # Genres
-        genres = artist.get('genres', [])
+        genres = artist.get("genres", [])
         if genres:
             embed.add_field(name="Genres", value=", ".join(genres[:5]), inline=True)
 
-        # Bio
-        bio = artist.get('bio', '').strip()
+        bio = (artist.get("bio") or "").strip()
         if bio:
-            bio = bio[:2000] + "..." if len(bio) > 2000 else bio
-            embed.add_field(name="Biography", value=bio, inline=False)
-
-        # Alternate names
-        alt_names = artist.get('alternate_names', [])
-        if alt_names:
             embed.add_field(
-                name="Also known as",
-                value=", ".join(alt_names[:5]),
-                inline=False
+                name="Biography",
+                value=bio[:2000] + "..." if len(bio) > 2000 else bio,
+                inline=False,
             )
 
-        # Thumbnail
-        if artist.get('image_url') or artist.get('avatar_url'):
-            embed.set_thumbnail(url=artist.get('image_url') or artist.get('avatar_url'))
+        thumb = artist.get("image_url") or artist.get("avatar_url")
+        if thumb:
+            embed.set_thumbnail(url=thumb)
 
         embed.set_footer(text="Powered by Juice WRLD API")
         return embed
 
-    else:
-        # Generic embed
-        return discord.Embed(
-            title="Juice WRLD",
-            description="Music and artist information",
-            color=0x6B21A8
+    return discord.Embed(
+        title="Juice WRLD",
+        description="Music and artist information",
+        color=0x6B21A8,
+    )
+
+
+def create_discord_juice_wrld_search_embed(query: str, songs: List[Dict], max_results: int = 10) -> discord.Embed:
+    embed = discord.Embed(
+        title="🔎 Juice WRLD Search Results",
+        description=f"Results for **{query}**",
+        color=0x6B21A8,
+        timestamp=datetime.utcnow(),
+    )
+
+    embed.set_author(
+        name="Juice WRLD",
+        icon_url="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Juice_WRLD_in_2019.jpg/440px-Juice_WRLD_in_2019.jpg",
+    )
+
+    if not songs:
+        embed.description = f"❌ No songs found for **{query}**"
+        embed.set_footer(text="Powered by Juice WRLD API")
+        return embed
+
+    thumb = songs[0].get("cover_art_url") or songs[0].get("image_url") or songs[0].get("artwork_url")
+    if thumb:
+        embed.set_thumbnail(url=thumb)
+
+    lines = []
+    for i, s in enumerate(songs[:max_results], 1):
+        title = s.get("title") or "Unknown"
+        status = (s.get("status") or "").replace("_", " ").title()
+        era = s.get("era") or ""
+        song_id = s.get("id")
+        bits = [f"**{i}. {title}**"]
+        meta = " • ".join([b for b in [era, status] if b])
+        if meta:
+            bits.append(f"_{meta}_")
+        if song_id is not None:
+            bits.append(f"`ID: {song_id}`")
+        lines.append(" ".join(bits))
+
+    embed.add_field(name=f"Songs ({min(len(songs), max_results)}/{len(songs)})", value="\n".join(lines)[:1024], inline=False)
+    embed.set_footer(text="Powered by Juice WRLD API")
+    return embed
+
+
+def create_discord_juice_wrld_song_list_embed(
+    title: str,
+    songs: List[Dict],
+    *,
+    subtitle: Optional[str] = None,
+    max_results: int = 15,
+) -> discord.Embed:
+    embed = discord.Embed(
+        title=title,
+        description=subtitle or "",
+        color=0x6B21A8,
+        timestamp=datetime.utcnow(),
+    )
+
+    if not songs:
+        embed.description = (subtitle + "\n\n" if subtitle else "") + "❌ No songs found."
+        embed.set_footer(text="Powered by Juice WRLD API")
+        return embed
+
+    thumb = songs[0].get("cover_art_url") or songs[0].get("image_url") or songs[0].get("artwork_url")
+    if thumb:
+        embed.set_thumbnail(url=thumb)
+
+    lines = []
+    for i, s in enumerate(songs[:max_results], 1):
+        title_txt = s.get("title") or "Unknown"
+        status = (s.get("status") or "").replace("_", " ").title()
+        date = s.get("release_date") or s.get("recording_date") or ""
+        era = s.get("era") or ""
+        song_id = s.get("id")
+
+        meta_bits = [b for b in [date, era, status] if b]
+        meta = " • ".join(meta_bits)
+        line = f"**{i}. {title_txt}**"
+        if meta:
+            line += f"\n_{meta}_"
+        if song_id is not None:
+            line += f"\n`ID: {song_id}`"
+        lines.append(line)
+
+    embed.add_field(
+        name=f"Songs ({min(len(songs), max_results)}/{len(songs)})",
+        value="\n\n".join(lines)[:1024],
+        inline=False,
+    )
+    embed.set_footer(text="Powered by Juice WRLD API")
+    return embed
+
+
+def create_discord_juice_wrld_lyric_search_embed(phrase: str, songs: List[Dict], max_results: int = 10) -> discord.Embed:
+    embed = discord.Embed(
+        title="🔎 Lyric Search (Juice WRLD)",
+        description=f"Songs containing **{phrase}**",
+        color=0x6B21A8,
+        timestamp=datetime.utcnow(),
+    )
+
+    if not songs:
+        embed.description = f"❌ No songs found containing **{phrase}**"
+        embed.set_footer(text="Powered by Juice WRLD API")
+        return embed
+
+    lines = []
+    for i, s in enumerate(songs[:max_results], 1):
+        title_txt = s.get("title") or "Unknown"
+        song_id = s.get("id")
+        snippet = ""
+        matched = s.get("matched_lyrics")
+        if isinstance(matched, str) and matched.strip():
+            snippet = matched.strip()
+        elif isinstance(matched, list) and matched:
+            snippet = str(matched[0]).strip()
+
+        if snippet:
+            # highlight phrase when possible
+            snippet_low = snippet.lower()
+            p_low = phrase.lower()
+            if p_low in snippet_low:
+                idx = snippet_low.find(p_low)
+                snippet = snippet[:idx] + "**" + snippet[idx:idx+len(phrase)] + "**" + snippet[idx+len(phrase):]
+            snippet = snippet[:200] + "..." if len(snippet) > 200 else snippet
+
+        line = f"**{i}. {title_txt}**"
+        if song_id is not None:
+            line += f" `ID: {song_id}`"
+        if snippet:
+            line += f"\n> {snippet}"
+        lines.append(line)
+
+    embed.add_field(name=f"Matches ({min(len(songs), max_results)}/{len(songs)})", value="\n\n".join(lines)[:1024], inline=False)
+    embed.set_footer(text="Powered by Juice WRLD API")
+    return embed
+
+
+def create_discord_juice_wrld_stats_embed(stats: Dict) -> discord.Embed:
+    embed = discord.Embed(
+        title="📊 Juice WRLD Database Stats",
+        color=0x6B21A8,
+        timestamp=datetime.utcnow(),
+    )
+
+    if not stats:
+        embed.description = "❌ Stats unavailable."
+        embed.set_footer(text="Powered by Juice WRLD API")
+        return embed
+
+    # tolerate a few likely shapes
+    total_released = stats.get("released") or stats.get("total_released")
+    total_unreleased = stats.get("unreleased") or stats.get("total_unreleased")
+    total_unsurfaced = stats.get("unsurfaced") or stats.get("total_unsurfaced")
+    total_sessions = stats.get("studio_session") or stats.get("studio_sessions") or stats.get("total_studio_sessions")
+    total_all = stats.get("total") or stats.get("total_songs") or stats.get("overall")
+
+    fields = [
+        ("✅ Released", total_released),
+        ("🟣 Unreleased", total_unreleased),
+        ("🕳️ Unsurfaced", total_unsurfaced),
+        ("🎛️ Studio Sessions", total_sessions),
+        ("📦 Total", total_all),
+    ]
+
+    for name, value in fields:
+        if value is not None and value != "":
+            embed.add_field(name=name, value=str(value), inline=True)
+
+    # show raw keys summary if nothing mapped
+    if not embed.fields:
+        embed.description = "\n".join([f"**{k}**: {v}" for k, v in list(stats.items())[:12]])
+
+    embed.set_footer(text="Powered by Juice WRLD API")
+    return embed
+
+
+def create_discord_juice_wrld_eras_embeds(eras: List[Dict], page_size: int = 15) -> List[discord.Embed]:
+    if not eras:
+        embed = discord.Embed(
+            title="🎭 Juice WRLD Eras",
+            description="❌ No era data available.",
+            color=0x6B21A8,
+            timestamp=datetime.utcnow(),
         )
+        embed.set_footer(text="Powered by Juice WRLD API")
+        return [embed]
+
+    pages: List[discord.Embed] = []
+    for start in range(0, len(eras), page_size):
+        chunk = eras[start:start + page_size]
+        page_num = (start // page_size) + 1
+        total_pages = (len(eras) + page_size - 1) // page_size
+
+        embed = discord.Embed(
+            title=f"🎭 Juice WRLD Eras (Page {page_num}/{total_pages})",
+            description="34-era timeline (sorted by API order)",
+            color=0x6B21A8,
+            timestamp=datetime.utcnow(),
+        )
+
+        lines = []
+        for era in chunk:
+            name = era.get("name") or "Unknown"
+            era_id = era.get("id")
+            start_date = era.get("start_date") or "?"
+            end_date = era.get("end_date") or "?"
+            count = era.get("song_count")
+            count_str = f" • {count} songs" if count is not None else ""
+            id_str = f" (ID: {era_id})" if era_id is not None else ""
+            lines.append(f"**{name}**{id_str}\n_{start_date} → {end_date}{count_str}_")
+
+        embed.add_field(name="Eras", value="\n\n".join(lines)[:1024], inline=False)
+        embed.set_footer(text="Powered by Juice WRLD API")
+        pages.append(embed)
+
+    return pages
+
+
+def create_discord_juice_wrld_cover_art_embed(song: Dict) -> discord.Embed:
+    title = song.get("title") or "Cover Art"
+    embed = discord.Embed(
+        title=f"🖼️ Cover Art — {title}",
+        url=song.get("cover_art_url") or song.get("juice_wrld_url"),
+        color=0x6B21A8,
+        timestamp=datetime.utcnow(),
+    )
+
+    art_url = song.get("cover_art_url")
+    if art_url:
+        embed.set_thumbnail(url=art_url)
+        embed.add_field(name="Download", value=f"[Open image]({art_url})", inline=False)
+    else:
+        embed.description = "❌ No cover art available for this song."
+
+    embed.set_footer(text="Powered by Juice WRLD API")
+    return embed
