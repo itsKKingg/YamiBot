@@ -17,7 +17,7 @@ from .providers.base import BaseProvider
 from .utils.logger import setup_logging
 from .utils.config import Config
 from .utils.circuit_breaker import CircuitBreaker, CircuitState
-from .utils.retry import retry_with_backoff
+from .utils.retry import retry_with_backoff_async
 
 logger = setup_logging(__name__)
 
@@ -393,10 +393,10 @@ Try any of them! They'll give you more info. 💡"
                         {"role": "system", "content": "You are YamiBot, a helpful Discord AI assistant."}
                     ] + updated_kwargs['messages']
                 
-                # NEW: Wrap query in retry logic with exponential backoff
-                response, metadata = await retry_with_backoff(
+                # Wrap query in retry logic with exponential backoff
+                response, metadata = await retry_with_backoff_async(
                     lambda: provider.query(prompt, **updated_kwargs),
-                    max_attempts=3,
+                    max_retries=3,
                     base_delay=1.0
                 )
                 
