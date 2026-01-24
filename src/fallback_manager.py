@@ -8,18 +8,18 @@ fallback logic when providers are rate-limited or unavailable.
 Enhanced with circuit breakers and retry logic for improved reliability.
 """
 
-import asyncio
-from typing import List, Optional, Dict, Any, Tuple
 import time
-from datetime import datetime, timedelta
+from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple
 
 from .providers.base import BaseProvider
-from .utils.logger import setup_logging
+from .utils.circuit_breaker import CircuitBreaker
 from .utils.config import Config
-from .utils.circuit_breaker import CircuitBreaker, CircuitState
+from .utils.logger import setup_logging
 from .utils.retry import retry_with_backoff
 
 logger = setup_logging(__name__)
+
 
 class ProviderStatus:
     """
@@ -29,6 +29,7 @@ class ProviderStatus:
     RATE_LIMITED = "rate_limited"
     FAILED = "failed"
     MAINTENANCE = "maintenance"
+
 
 class FallbackManager:
     """
@@ -393,12 +394,14 @@ Try any of them! They'll give you more info. 💡"
                         {"role": "system", "content": "You are YamiBot, a helpful Discord AI assistant."}
                     ] + updated_kwargs['messages']
                 
-                # NEW: Wrap query in retry logic with exponential backoff
-                response, metadata = await retry_with_backoff(
-                    lambda: provider.query(prompt, **updated_kwargs),
-                    max_attempts=3,
-                    base_delay=1.0
-                )
+                # Wrap the provider call in retry logic with exponential backoff
+                async def _query_provider() -> Tuple[str, Dict[str, Any]]:
+                    """Execute a single provider query attempt."""
+
+                    return await provider.query(prompt, **updated_kwargs)
+
+                retrying_query = retry_with_backoff(max_retries=3, base_delay=1.0)(_query_provider)
+                response, metadata = await retrying_query()
                 
                 # Request succeeded - record success in circuit breaker
                 if provider_name in self.circuit_breakers:
