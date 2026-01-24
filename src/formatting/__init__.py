@@ -18,7 +18,13 @@ from .music_formatter import (
     format_song_card,
     format_song_list,
     format_artist_info,
-    create_discord_juice_wrld_embed
+    create_discord_juice_wrld_embed,
+    create_discord_juice_wrld_search_embed,
+    create_discord_juice_wrld_song_list_embed,
+    create_discord_juice_wrld_lyric_search_embed,
+    create_discord_juice_wrld_stats_embed,
+    create_discord_juice_wrld_eras_embeds,
+    create_discord_juice_wrld_cover_art_embed,
 )
 
 __all__ = [
@@ -35,5 +41,11 @@ __all__ = [
     "format_song_card",
     "format_song_list",
     "format_artist_info",
-    "create_discord_juice_wrld_embed"
+    "create_discord_juice_wrld_embed",
+    "create_discord_juice_wrld_search_embed",
+    "create_discord_juice_wrld_song_list_embed",
+    "create_discord_juice_wrld_lyric_search_embed",
+    "create_discord_juice_wrld_stats_embed",
+    "create_discord_juice_wrld_eras_embeds",
+    "create_discord_juice_wrld_cover_art_embed",
 ]

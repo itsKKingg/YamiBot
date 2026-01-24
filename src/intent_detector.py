@@ -68,6 +68,150 @@ class IntentDetector:
             "confidence": 0.9,
             "extract_param": True
         },
+        # ============ JUICE WRLD API (PRIMARY MUSIC SOURCE) ============
+        "juice_random": {
+            "keywords": [
+                "random track", "random song", "random juice", "radio", "shuffle",
+                "surprise me", "play something random"
+            ],
+            "patterns": [
+                r"\brandom\s+(?:juice\s+)?(?:track|song)\b",
+                r"\b(?:juice\s+)?radio\b",
+                r"\bshuffle\b"
+            ],
+            "confidence": 0.9
+        },
+        "juice_stats": {
+            "keywords": [
+                "juice stats", "how many juice", "how many songs", "database stats",
+                "overall stats", "song stats", "stats"
+            ],
+            "patterns": [
+                r"\bhow\s+many\s+(?:juice\s+)?songs?\b",
+                r"\b(?:juice\s+)?stats\b",
+                r"\bdatabase\s+stats\b"
+            ],
+            "confidence": 0.85
+        },
+        "juice_eras_list": {
+            "keywords": [
+                "list eras", "show eras", "eras", "era list", "timeline"
+            ],
+            "patterns": [
+                r"\blist\s+all\s+eras\b",
+                r"\bshow\s+all\s+eras\b",
+                r"\beras\b",
+                r"\bera\s+timeline\b"
+            ],
+            "confidence": 0.8
+        },
+        "juice_era_filter": {
+            "keywords": [
+                "songs from", "from era", "era songs"
+            ],
+            "patterns": [
+                r"\bsongs?\s+from\s+([^?]+?)(?:\s+era)?\b",
+                r"\bfrom\s+the\s+([^?]+?)\s+era\b",
+                r"\b([^?]+?)\s+era\s+songs\b"
+            ],
+            "confidence": 0.85,
+            "extract_param": True
+        },
+        "juice_category_filter": {
+            "keywords": [
+                "unreleased", "unsurfaced", "released", "studio session", "studio sessions"
+            ],
+            "patterns": [
+                r"\b(?:show\s+me\s+)?(released|unreleased|unsurfaced|studio_session|studio\s+sessions?)\s+(?:songs?|tracks?)\b",
+                r"\bsongs?\s+in\s+(released|unreleased|unsurfaced|studio_session)\b"
+            ],
+            "confidence": 0.85,
+            "extract_param": True
+        },
+        "juice_lyric_search": {
+            "keywords": [
+                "find lyrics with", "songs with lyric", "songs containing", "lyrics with"
+            ],
+            "patterns": [
+                r"\bfind\s+lyrics\s+with\s+([^?]+)",
+                r"\bsongs?\s+containing\s+([^?]+)",
+                r"\bsongs?\s+with\s+lyrics?\s+([^?]+)",
+                r"\blyrics?\s+search\s+([^?]+)"
+            ],
+            "confidence": 0.9,
+            "extract_param": True
+        },
+        "juice_producer_filter": {
+            "keywords": [
+                "produced by", "songs produced by", "what was produced by"
+            ],
+            "patterns": [
+                r"\bsongs?\s+produced\s+by\s+([^?]+)",
+                r"\bwhat\s+was\s+produced\s+by\s+([^?]+)"
+            ],
+            "confidence": 0.85,
+            "extract_param": True
+        },
+        "juice_song_info": {
+            "keywords": [
+                "song details", "details for", "when was", "where was", "who produced", "recorded", "produced"
+            ],
+            "patterns": [
+                r"\bwho\s+produced\s+([^?]+)\b",
+                r"\bwhen\s+was\s+([^?]+)\s+recorded\b",
+                r"\bwhere\s+was\s+([^?]+)\s+recorded\b",
+                r"\bdetails\s+for\s+([^?]+)",
+                r"\bsong\s+details\s+for\s+([^?]+)",
+                r"\b(?:song\s+)?id\s+(\d+)\b"
+            ],
+            "confidence": 0.85,
+            "extract_param": True
+        },
+        "juice_cover_art": {
+            "keywords": [
+                "cover art", "artwork", "album art"
+            ],
+            "patterns": [
+                r"\b(?:cover\s+art|artwork|album\s+art)\s+(?:for\s+)?([^?]+)"
+            ],
+            "confidence": 0.85,
+            "extract_param": True
+        },
+        "juice_stream": {
+            "keywords": [
+                "streaming link", "listen link", "listen here", "download link", "stream"
+            ],
+            "patterns": [
+                r"\b(?:streaming\s+link|listen\s+link|download\s+link)\s+(?:for\s+)?([^?]+)",
+                r"\blisten\s+to\s+([^?]+)"
+            ],
+            "confidence": 0.85,
+            "extract_param": True
+        },
+        "juice_collection": {
+            "keywords": [
+                "zip", "archive", "collection", "download era", "download zip"
+            ],
+            "patterns": [
+                r"\b(?:make|generate|create)\s+(?:a\s+)?(?:zip|archive)\s+(?:of\s+)?([^?]+)",
+                r"\bdownload\s+(?:a\s+)?(?:zip|archive)\s+(?:of\s+)?([^?]+)",
+                r"\bzip\s+of\s+([^?]+)"
+            ],
+            "confidence": 0.85,
+            "extract_param": True
+        },
+        "juice_search": {
+            "keywords": [
+                "find", "search song", "search songs", "song search", "find song", "search for song",
+                "find juice song", "search juice"
+            ],
+            "patterns": [
+                r"\bsearch\s+(?:for\s+)?(?:a\s+)?(?:song\s+)?([^?]+)",
+                r"\bfind\s+(?:me\s+)?(?:a\s+)?(?:song\s+)?([^?]+)"
+            ],
+            "confidence": 0.8,
+            "extract_param": True
+        },
         "music_lyrics": {
             "keywords": [
                 "lyrics", "lyric", "words to", "what are the lyrics",
@@ -238,6 +382,14 @@ class IntentDetector:
 
             # If either keyword or pattern matches
             if keyword_match or pattern_match:
+                # Guardrails: avoid treating generic web-search phrasing as Juice song search
+                if intent_name == "juice_search":
+                    weby = ["information", "info", "about", "definition", "define", "how to", "tutorial", "news"]
+                    if any(w in message_lower for w in weby) and not any(
+                        w in message_lower for w in ["song", "track", "lyrics", "juice"]
+                    ):
+                        continue
+
                 confidence = intent_data["confidence"]
 
                 # Extract parameters if needed
@@ -247,7 +399,7 @@ class IntentDetector:
 
                 # Determine API source for music intents
                 api_source = None
-                if intent_name.startswith("music_"):
+                if intent_name.startswith("music_") or intent_name.startswith("juice_"):
                     api_source = IntentDetector.determine_api_source(message_lower)
 
                 logger.info(f"Detected intent: {intent_name} (confidence: {confidence}, api_source: {api_source})")
@@ -320,41 +472,23 @@ class IntentDetector:
         Determine which API to use based on message content.
 
         API Priority Logic:
-        - If "Juice WRLD" mentioned → "juice_wrld" (primary)
-        - If "genius" explicitly mentioned → "genius"
-        - If "lyrics" without "Juice WRLD" → "genius"
         - If "soundcloud" explicitly mentioned → "soundcloud"
-        - Otherwise → None (use default routing - Genius)
+        - Otherwise → "juice_wrld" (primary)
 
         Args:
             message: The user's message (lowercase)
 
         Returns:
-            API source: "juice_wrld", "genius", "soundcloud", or None
+            API source: "juice_wrld" or "soundcloud"
         """
-        # Priority 1: Juice WRLD mentioned - always use Juice WRLD API
-        if "juice wrld" in message or "juicewrld" in message:
-            logger.debug("API source: juice_wrld (Juice WRLD detected)")
-            return "juice_wrld"
-
-        # Priority 2: Explicit Genius request
-        if "genius" in message:
-            logger.debug("API source: genius (explicitly requested)")
-            return "genius"
-
-        # Priority 3: SoundCloud - ONLY when explicitly mentioned
+        # Priority 1: SoundCloud - ONLY when explicitly mentioned
         if "soundcloud" in message:
             logger.debug("API source: soundcloud (explicitly requested)")
             return "soundcloud"
 
-        # Priority 4: Lyrics requests - Genius (non-Juice WRLD)
-        if "lyrics" in message or "lyric" in message:
-            logger.debug("API source: genius (lyrics request)")
-            return "genius"
-
-        # No specific API determined - defaults to Genius for music
-        logger.debug("API source: None (use default routing)")
-        return None
+        # Default: Juice WRLD API is the primary music source
+        logger.debug("API source: juice_wrld (default)")
+        return "juice_wrld"
 
     @staticmethod
     def _extract_parameters(message: str, intent: str, pattern: str) -> Dict[str, any]:
@@ -400,6 +534,50 @@ class IntentDetector:
                 # Extract number of messages
                 if match.lastindex and match.lastindex >= 1:
                     params["count"] = int(match.group(1))
+
+            elif intent == "juice_era_filter":
+                if match.lastindex and match.lastindex >= 1:
+                    params["era"] = match.group(1).strip()
+
+            elif intent == "juice_category_filter":
+                if match.lastindex and match.lastindex >= 1:
+                    raw = match.group(1).strip().lower()
+                    raw = raw.replace(" ", "_")
+                    if raw.endswith("s") and raw.startswith("studio_"):
+                        raw = "studio_session"
+                    params["category"] = raw
+
+            elif intent == "juice_lyric_search":
+                if match.lastindex and match.lastindex >= 1:
+                    params["phrase"] = match.group(1).strip().strip('"\'')
+
+            elif intent == "juice_producer_filter":
+                if match.lastindex and match.lastindex >= 1:
+                    params["producer"] = match.group(1).strip()
+
+            elif intent == "juice_song_info":
+                if match.lastindex and match.lastindex >= 1:
+                    q = match.group(1).strip()
+                    if q.isdigit():
+                        params["song_id"] = int(q)
+                    else:
+                        params["query"] = q
+
+                # Determine which metadata the user is asking for
+                if "produced" in message:
+                    params["info_type"] = "producer"
+                elif "where" in message and "recorded" in message:
+                    params["info_type"] = "studio"
+                elif "when" in message and "recorded" in message:
+                    params["info_type"] = "recording_date"
+                elif "recorded" in message:
+                    params["info_type"] = "recording_date"
+                else:
+                    params["info_type"] = "details"
+
+            elif intent in ["juice_cover_art", "juice_stream", "juice_collection", "juice_search"]:
+                if match.lastindex and match.lastindex >= 1:
+                    params["query"] = match.group(1).strip()
 
             elif intent in ["music_lyrics", "music_search", "music_artist", "music_annotation"]:
                 # Extract song/artist name

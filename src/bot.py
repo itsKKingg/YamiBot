@@ -35,6 +35,7 @@ from .model_analytics import ModelAnalytics
 from .intent_detector import IntentDetector
 from .integrations.genius_api import GeniusAPI
 from .integrations.soundcloud_api import SoundCloudAPI
+from .integrations.juice_wrld_api import JuiceWrldAPI
 
 # Setup logging
 logger = setup_logging(__name__)
@@ -202,8 +203,20 @@ class YamiBot(commands.Bot):
         logger.info("Fallback manager initialized with shared session")
 
     def _initialize_music_apis(self):
-        """Initialize music APIs if keys are available"""
-        # Genius API
+        """Initialize music APIs.
+
+        Juice WRLD API is the primary data source and does not require API keys.
+        Genius is configured as a *backup only* for Juice WRLD songs when Juice WRLD API fails.
+        """
+        # Juice WRLD API (primary)
+        try:
+            self.juice_wrld_api = JuiceWrldAPI(session=self.http_session)
+            logger.info("Juice WRLD API initialized successfully")
+        except Exception as e:
+            logger.error(f"Failed to initialize Juice WRLD API: {e}")
+            self.juice_wrld_api = None
+
+        # Genius API (backup)
         if self.config.genius_access_token:
             try:
                 self.genius_api = GeniusAPI(
@@ -215,10 +228,10 @@ class YamiBot(commands.Bot):
                 logger.error(f"Failed to initialize Genius API: {e}")
                 self.genius_api = None
         else:
-            logger.info("Genius API key not configured, lyrics features unavailable")
+            logger.info("Genius API key not configured, lyrics fallback unavailable")
             self.genius_api = None
 
-        # SoundCloud API
+        # SoundCloud API (optional; explicit SoundCloud requests only)
         if self.config.soundcloud_client_id and self.config.soundcloud_client_secret:
             try:
                 self.soundcloud_api = SoundCloudAPI(
@@ -231,7 +244,7 @@ class YamiBot(commands.Bot):
                 logger.error(f"Failed to initialize SoundCloud API: {e}")
                 self.soundcloud_api = None
         else:
-            logger.info("SoundCloud API keys not configured, audio features unavailable")
+            logger.info("SoundCloud API keys not configured, SoundCloud features unavailable")
             self.soundcloud_api = None
 
     async def _monitor_memory(self):
