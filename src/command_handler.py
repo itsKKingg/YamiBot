@@ -15,10 +15,13 @@ from .utils.logger import setup_logging
 from .intent_detector import IntentDetector
 from .message_validator import MessageValidator
 from .formatting.music_formatter import (
+    format_lyrics_card,
     format_song_card,
     format_song_list,
     format_artist_info,
-    create_discord_juice_wrld_embed
+    create_discord_embed,
+    create_discord_genius_embed,
+    create_discord_juice_wrld_embed,
 )
 
 logger = setup_logging(__name__)
@@ -567,8 +570,6 @@ class CommandHandler:
                         annotations = await self.bot.genius_api.get_song_annotations(song_id, limit=3)
 
                         # Format response using Discord embed
-                        from ..formatting.music_formatter import create_discord_genius_embed
-
                         embed = create_discord_genius_embed(song=song, annotations=annotations)
                         await message.reply(embed=embed)
 
@@ -626,8 +627,6 @@ class CommandHandler:
                         track = await self.bot.soundcloud_api.get_track(str(track_id))
 
                         # Format as Discord embed
-                        from ..formatting.music_formatter import create_discord_embed
-
                         embed = create_discord_embed(track)
                         await message.reply(embed=embed)
 
@@ -754,8 +753,6 @@ class CommandHandler:
                         artist = await self.bot.genius_api.get_artist(artist_id)
 
                         # Format as Discord embed
-                        from ..formatting.music_formatter import create_discord_genius_embed
-
                         embed = create_discord_genius_embed(artist=artist)
                         await message.reply(embed=embed)
 
@@ -839,8 +836,6 @@ class CommandHandler:
                         return
 
                     # Format annotations
-                    from ..formatting.music_formatter import format_lyrics_card
-
                     song = await self.bot.genius_api.get_song(song_id)
                     response = format_lyrics_card(song, annotations)
 
