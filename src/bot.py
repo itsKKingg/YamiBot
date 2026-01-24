@@ -393,12 +393,14 @@ class YamiBot(commands.Bot):
                 is_command = await self.command_handler.handle_message(message)
                 if is_command:
                     # Message was a command, don't process as regular chat
+                    logger.debug(f"Message was handled as command, skipping AI chat processing")
                     return
             except Exception as e:
                 logger.error(f"Error in command handler: {e}", exc_info=True)
                 # Continue with normal processing if command handler fails
 
-        # ========== Step 6: Process Request ==========
+        # ========== Step 6: Process Request (AI Chat) ==========
+        logger.debug(f"Processing message as AI chat request (not a command)")
         try:
             async with message.channel.typing():
                 logger.info(
