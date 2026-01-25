@@ -165,6 +165,54 @@ class IntentDetector:
             "confidence": 0.8,
             "extract_param": True
         },
+        "smart_juice_query": {
+            "keywords": [
+                "lyrics to", "album", "featured artists", "produced by", "era",
+                "sad juice songs", "hype juice songs", "juice stats", "top juice songs",
+                "who's on", "streaming links", "juice biography", "zip archive",
+                "random juice song", "playlist recommendations"
+            ],
+            "patterns": [
+                # Lyrics
+                r"\b(lyrics?|lyric)\b.*\b(?:to|for)\s+(.+)",
+                r"\b(.+?)\s+lyrics?\b",
+                # Album
+                r"\b(?:album|mixtape|ep|project)\s+(.+)",
+                r"\bfrom\s+(?:the\s+)?(?:album|mixtape|project)\s+(.+)",
+                # Featured
+                r"\bwho'?s?\s+on\s+(.+?)\s+with\s+juice",
+                r"\bwho'?s?\s+featured\s+on\s+(.+)",
+                # Producer
+                r"\bproduced\s+by\s+(.+)",
+                r"\bproducer\s+(.+)",
+                r"\bbeat\s+by\s+(.+)",
+                # Era
+                r"\b(?:era|period|time)\s+(.+)",
+                r"\bfrom\s+(.+?)\s+era",
+                # Category/Mood
+                r"\b(sad|hype|introspective|emotional|party|chill|melodic|aggressive)\s+juice\s+songs?\b",
+                # Stats
+                r"\b(stats?|statistics|numbers|info)\b.*\bjuice",
+                r"\bjuice\s+wrld\s+(stats?|statistics|numbers)",
+                # Charts
+                r"\b(top|chart|ranking|most\s+popular)\b.*\bjuice",
+                # Streaming
+                r"\b(stream|play|listen|spotify|apple\s+music|soundcloud)\b.*\b(.+)",
+                # Related
+                r"\b(similar|related|like|artists?\s+like)\b.*\bjuice",
+                # Biography
+                r"\b(bio|biography|life|story|background|about)\b.*\bjuice",
+                r"\btell\s+me\s+about\s+juice\s+wrld",
+                # Archive
+                r"\b(zip|archive|download\s+all|discography)\b",
+                # Random
+                r"\b(random|surprise|any|unexpected)\b.*\bjuice\s+songs?\b",
+                # Playlist
+                r"\b(playlist|recommendations?|suggestions?)\b.*\bjuice",
+            ],
+            "confidence": 0.85,
+            "extract_param": True
+        },
         
         # ============ WEB SEARCH ============
         "search": {
