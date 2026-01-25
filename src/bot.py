@@ -99,6 +99,17 @@ class YamiBot(commands.Bot):
         # Command handler
         self.command_handler = None
         
+        # Juice WRLD API caching
+        self.juice_wrld_cache = {
+            'all_songs': None,
+            'eras': None,
+            'categories': None,
+            'stats': None,
+            'cache_time': 0,
+            'cache_ttl': 3600  # 1 hour
+        }
+        self.cache_refresh_task = None
+        
         # Log initial memory status
         self.start_memory = log_memory_status()
         
@@ -152,6 +163,9 @@ class YamiBot(commands.Bot):
 
         # Initialize music APIs if keys are available
         self._initialize_music_apis()
+
+        # Start Juice WRLD cache refresh task
+        self.cache_refresh_task = asyncio.create_task(self._refresh_juice_wrld_cache())
 
         logger.info("Bot setup complete with resource management and model routing enabled")
     
@@ -247,6 +261,49 @@ class YamiBot(commands.Bot):
             logger.info("SoundCloud API keys not configured, SoundCloud features unavailable")
             self.soundcloud_api = None
 
+    async def _get_cached_juice_wrld_data(self, cache_key: str):
+        """Get data from Juice WRLD cache if available"""
+        now = time.time()
+        if self.juice_wrld_cache['cache_time'] + self.juice_wrld_cache['cache_ttl'] > now:
+            return self.juice_wrld_cache.get(cache_key)
+        
+        # Cache expired, return None to trigger refresh
+        return None
+
+    async def _refresh_juice_wrld_cache(self):
+        """Periodically refresh Juice WRLD API cache"""
+        while not self.shutdown_event.is_set():
+            try:
+                # Only refresh if we have the API available
+                if hasattr(self, 'juice_wrld_api') and self.juice_wrld_api:
+                    logger.info("Refreshing Juice WRLD API cache...")
+                    
+                    # Refresh all cached data
+                    all_songs = await self.juice_wrld_api.search_all_songs(limit=1000)
+                    eras = await self.juice_wrld_api.list_eras()
+                    categories = await self.juice_wrld_api.get_categories()
+                    stats = await self.juice_wrld_api.get_stats()
+                    
+                    self.juice_wrld_cache.update({
+                        'all_songs': all_songs,
+                        'eras': eras,
+                        'categories': categories,
+                        'stats': stats,
+                        'cache_time': time.time()
+                    })
+                    
+                    logger.info(f"Juice WRLD cache refreshed: {len(all_songs)} songs, {len(eras)} eras")
+                else:
+                    logger.debug("Juice WRLD API not available, skipping cache refresh")
+                
+                # Wait before next refresh (30 minutes)
+                await asyncio.sleep(1800)
+                
+            except Exception as e:
+                logger.error(f"Error refreshing Juice WRLD cache: {e}", exc_info=True)
+                # Wait before retry (5 minutes on error)
+                await asyncio.sleep(300)
+
     async def _monitor_memory(self):
         """Background task to monitor memory usage"""
         while not self.shutdown_event.is_set():
@@ -285,9 +342,14 @@ class YamiBot(commands.Bot):
             if not task.done():
                 task.cancel()
         
+        # Cancel cache refresh task
+        if self.cache_refresh_task and not self.cache_refresh_task.done():
+            self.cache_refresh_task.cancel()
+        
         # Wait for cleanup tasks to finish
-        if self.cleanup_tasks:
-            await asyncio.gather(*self.cleanup_tasks, return_exceptions=True)
+        all_tasks = self.cleanup_tasks + ([self.cache_refresh_task] if self.cache_refresh_task else [])
+        if all_tasks:
+            await asyncio.gather(*all_tasks, return_exceptions=True)
         
         # Close HTTP session
         if self.http_session:

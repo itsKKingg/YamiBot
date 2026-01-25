@@ -72,89 +72,113 @@ class IntentDetector:
         "juice_random": {
             "keywords": [
                 "random track", "random song", "random juice", "radio", "shuffle",
-                "surprise me", "play something random"
+                "surprise me", "play something random", "surprise song", "pick a random"
             ],
             "patterns": [
                 r"\brandom\s+(?:juice\s+)?(?:track|song)\b",
                 r"\b(?:juice\s+)?radio\b",
-                r"\bshuffle\b"
+                r"\bshuffle\b",
+                r"\bsurprise\s+me\b",
+                r"\b(?:play|pick)\s+(?:a\s+)?random\b"
             ],
             "confidence": 0.9
         },
         "juice_stats": {
             "keywords": [
                 "juice stats", "how many juice", "how many songs", "database stats",
-                "overall stats", "song stats", "stats"
+                "overall stats", "song stats", "stats", "statistics", "total songs",
+                "juice wrld database stats", "how many songs does juice have"
             ],
             "patterns": [
                 r"\bhow\s+many\s+(?:juice\s+)?songs?\b",
-                r"\b(?:juice\s+)?stats\b",
-                r"\bdatabase\s+stats\b"
+                r"\bjuice\s+(?:wrld\s+)?stats\b",
+                r"\bdatabase\s+stats\b",
+                r"\boverall\s+stats\b",
+                r"\bsong\s+stats\b",
+                r"\bstatistics\b",
+                r"\btotal\s+songs?\b",
+                r"\bjuice\s+wrld\s+statistics\b",
+                r"\bjuice\s+stats\b"
             ],
             "confidence": 0.85
         },
         "juice_eras_list": {
             "keywords": [
-                "list eras", "show eras", "eras", "era list", "timeline"
+                "list eras", "show eras", "eras", "era list", "timeline", "all eras",
+                "juice eras", "album eras", "show all eras"
             ],
             "patterns": [
                 r"\blist\s+all\s+eras\b",
                 r"\bshow\s+all\s+eras\b",
+                r"\bjuice\s+eras\b",
                 r"\beras\b",
-                r"\bera\s+timeline\b"
+                r"\bera\s+timeline\b",
+                r"\balbum\s+eras\b"
             ],
             "confidence": 0.8
         },
         "juice_era_filter": {
             "keywords": [
-                "songs from", "from era", "era songs"
+                "songs from", "from era", "era songs", "songs in era", "show songs from"
             ],
             "patterns": [
                 r"\bsongs?\s+from\s+([^?]+?)(?:\s+era)?\b",
                 r"\bfrom\s+the\s+([^?]+?)\s+era\b",
-                r"\b([^?]+?)\s+era\s+songs\b"
+                r"\b([^?]+?)\s+era\s+songs?\b",
+                r"\bsongs?\s+in\s+([^?]+?)\s+era\b"
             ],
             "confidence": 0.85,
             "extract_param": True
         },
         "juice_category_filter": {
             "keywords": [
-                "unreleased", "unsurfaced", "released", "studio session", "studio sessions"
+                "unreleased", "unsurfaced", "released", "studio session", "studio sessions",
+                "show unreleased", "show released", "show unsurfaced", "studio", "session", "sessions"
             ],
             "patterns": [
                 r"\b(?:show\s+me\s+)?(released|unreleased|unsurfaced|studio_session|studio\s+sessions?)\s+(?:songs?|tracks?)\b",
-                r"\bsongs?\s+in\s+(released|unreleased|unsurfaced|studio_session)\b"
+                r"\bsongs?\s+in\s+(released|unreleased|unsurfaced|studio_session)\b",
+                r"\bstudio\s+sessions?\b"
             ],
             "confidence": 0.85,
             "extract_param": True
         },
         "juice_lyric_search": {
             "keywords": [
-                "find lyrics with", "songs with lyric", "songs containing", "lyrics with"
+                "find lyrics with", "songs with lyric", "songs containing", "lyrics with",
+                "search lyrics", "lyric search", "find songs with lyrics", "lyrics about"
             ],
             "patterns": [
                 r"\bfind\s+lyrics\s+with\s+([^?]+)",
                 r"\bsongs?\s+containing\s+([^?]+)",
                 r"\bsongs?\s+with\s+lyrics?\s+([^?]+)",
-                r"\blyrics?\s+search\s+([^?]+)"
+                r"\blyrics?\s+search\s+([^?]+)",
+                r"\bsearch\s+lyrics\s+([^?]+)",
+                r"\bfind\s+songs\s+with\s+lyrics\s+([^?]+)",
+                r"\blyrics\s+about\s+([^?]+)"
             ],
             "confidence": 0.9,
             "extract_param": True
         },
         "juice_producer_filter": {
             "keywords": [
-                "produced by", "songs produced by", "what was produced by"
+                "produced by", "songs produced by", "what was produced by", "songs by producer",
+                "who produced", "producer tracks", "beats by"
             ],
             "patterns": [
                 r"\bsongs?\s+produced\s+by\s+([^?]+)",
-                r"\bwhat\s+was\s+produced\s+by\s+([^?]+)"
+                r"\bwhat\s+was\s+produced\s+by\s+([^?]+)",
+                r"\bwho\s+produced\s+([^?]+)",
+                r"\bsongs?\s+by\s+producer\s+([^?]+)",
+                r"\bbeats\s+by\s+([^?]+)"
             ],
             "confidence": 0.85,
             "extract_param": True
         },
         "juice_song_info": {
             "keywords": [
-                "song details", "details for", "when was", "where was", "who produced", "recorded", "produced"
+                "song details", "details for", "when was", "where was", "who produced", "recorded", "produced",
+                "song info", "info about song", "show song details"
             ],
             "patterns": [
                 r"\bwho\s+produced\s+([^?]+)\b",
@@ -162,6 +186,7 @@ class IntentDetector:
                 r"\bwhere\s+was\s+([^?]+)\s+recorded\b",
                 r"\bdetails\s+for\s+([^?]+)",
                 r"\bsong\s+details\s+for\s+([^?]+)",
+                r"\b(?:song\s+)?info\s+about\s+([^?]+)",
                 r"\b(?:song\s+)?id\s+(\d+)\b"
             ],
             "confidence": 0.85,
@@ -169,36 +194,72 @@ class IntentDetector:
         },
         "juice_cover_art": {
             "keywords": [
-                "cover art", "artwork", "album art"
+                "cover art", "artwork", "album art", "cover image", "show cover art"
             ],
             "patterns": [
-                r"\b(?:cover\s+art|artwork|album\s+art)\s+(?:for\s+)?([^?]+)"
+                r"\b(?:cover\s+art|artwork|album\s+art)\s+(?:for\s+)?([^?]+)",
+                r"\bcover\s+image\s+(?:for\s+)?([^?]+)",
+                r"\bshow\s+cover\s+art\s+(?:for\s+)?([^?]+)"
             ],
             "confidence": 0.85,
             "extract_param": True
         },
         "juice_stream": {
             "keywords": [
-                "streaming link", "listen link", "listen here", "download link", "stream"
+                "streaming link", "listen link", "listen here", "stream", "play", "listen",
+                "streaming url", "audio stream", "music stream"
             ],
             "patterns": [
                 r"\b(?:streaming\s+link|listen\s+link|download\s+link)\s+(?:for\s+)?([^?]+)",
-                r"\blisten\s+to\s+([^?]+)"
+                r"\blisten\s+to\s+([^?]+)",
+                r"\bstream\s+(?:song\s+)?([^?]+)",
+                r"\bplay\s+(?:song\s+)?([^?]+)",
+                r"\blisten\s+(?:to\s+)?([^?]+)"
+            ],
+            "confidence": 0.85,
+            "extract_param": True
+        },
+        "juice_download": {
+            "keywords": [
+                "download", "download song", "get download", "download link", "download url"
+            ],
+            "patterns": [
+                r"\bdownload\s+(?:song\s+)?([^?]+)",
+                r"\bget\s+download\s+(?:for\s+)?([^?]+)",
+                r"\bdownload\s+link\s+(?:for\s+)?([^?]+)"
             ],
             "confidence": 0.85,
             "extract_param": True
         },
         "juice_collection": {
             "keywords": [
-                "zip", "archive", "collection", "download era", "download zip"
+                "zip", "archive", "collection", "download era", "download zip", "create archive",
+                "make collection", "bundle songs", "download bundle", "make zip", "generate archive"
             ],
             "patterns": [
                 r"\b(?:make|generate|create)\s+(?:a\s+)?(?:zip|archive)\s+(?:of\s+)?([^?]+)",
                 r"\bdownload\s+(?:a\s+)?(?:zip|archive)\s+(?:of\s+)?([^?]+)",
-                r"\bzip\s+of\s+([^?]+)"
+                r"\bzip\s+of\s+([^?]+)",
+                r"\bcreate\s+(?:a\s+)?collection\s+(?:of\s+)?([^?]+)",
+                r"\bbundle\s+(?:of\s+)?songs?\s+([^?]+)",
+                r"\bdownload\s+archive\s+of\s+([^?]+)"
             ],
             "confidence": 0.85,
             "extract_param": True
+        },
+        "juice_browse": {
+            "keywords": [
+                "browse", "show all", "list all", "catalog", "library", "browse songs", "browse library"
+            ],
+            "patterns": [
+                r"\bbrowse\s+(?:songs?|library|catalog)\b",
+                r"\bshow\s+all\s+(?:songs?|tracks?)\b",
+                r"\blist\s+all\s+(?:songs?|tracks?)\b",
+                r"\bbrowse\s+eras\b",
+                r"\bbrowse\s+categories\b",
+                r"\bbrowse\s+juice\s+wrld\s+songs\b"
+            ],
+            "confidence": 0.8
         },
         "juice_search": {
             "keywords": [
@@ -388,7 +449,7 @@ class IntentDetector:
                 # Guardrails: prevent misclassification of artist info requests as song searches
                 if intent_name == "juice_search":
                     # Skip if asking for artist information/facts instead of songs
-                    info_keywords = ["birthday", "death", "age", "born", "information", "about", "bio", "biography", "when did", "when was"]
+                    info_keywords = ["birthday", "death", "age", "born", "information", "about", "bio", "biography", "when did", "when was", "tell me"]
                     music_keywords = ["song", "track", "lyrics", "music"]
                     
                     # If asking for artist info but not explicitly searching for songs

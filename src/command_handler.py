@@ -108,6 +108,175 @@ class CommandHandler:
         
         return True
 
+    async def _handle_juice_download(self, message: discord.Message, query: str) -> None:
+        """Handle Juice WRLD download requests"""
+        if not query:
+            await message.reply("Which song do you want to download?")
+            return
+
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            await message.reply("❌ Juice WRLD API is not available right now.")
+            return
+
+        async with message.channel.typing():
+            song = await self._resolve_juice_song(song_query=query, song_id=None)
+            if not song:
+                await message.reply("❌ Couldn't find that song.")
+                return
+
+            download_url = song.get("download_url")
+            if download_url:
+                await message.reply(
+                    content=f"💾 **Download:** {download_url}",
+                    embed=create_discord_juice_wrld_embed(song=song)
+                )
+            else:
+                await message.reply("❌ No download link available for this track.")
+
+    async def _handle_juice_browse(self, message: discord.Message) -> None:
+        """Handle Juice WRLD browse requests"""
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            await message.reply("❌ Juice WRLD API is not available right now.")
+            return
+
+        async with message.channel.typing():
+            # Try to browse different types of content
+            try:
+                # Browse artists, albums, and tracks
+                artists = await self.bot.juice_wrld_api.browse_artists()
+                albums = await self.bot.juice_wrld_api.browse_albums()
+                tracks = await self.bot.juice_wrld_api.browse_tracks()
+
+                # Get stats for overview
+                stats = await self.bot.juice_wrld_api.get_stats()
+
+                content = f"📚 **Juice WRLD Library Overview**\n\n"
+                content += f"📊 **Statistics:**\n"
+                content += f"• Total Songs: {stats.get('total_songs', 'N/A')}\n"
+                content += f"• Total Eras: {stats.get('total_eras', 'N/A')}\n"
+                content += f"• Total Categories: {stats.get('total_categories', 'N/A')}\n\n"
+
+                if artists:
+                    content += f"🎤 **Artists ({len(artists)}):**\n"
+                    for artist in artists[:5]:
+                        content += f"• {artist.get('name', 'Unknown')}\n"
+                    if len(artists) > 5:
+                        content += f"... and {len(artists) - 5} more\n"
+                    content += "\n"
+
+                if albums:
+                    content += f"💿 **Albums ({len(albums)}):**\n"
+                    for album in albums[:5]:
+                        content += f"• {album.get('title', 'Unknown')}\n"
+                    if len(albums) > 5:
+                        content += f"... and {len(albums) - 5} more\n"
+                    content += "\n"
+
+                if tracks:
+                    content += f"🎵 **Sample Tracks ({len(tracks)}):**\n"
+                    for track in tracks[:5]:
+                        content += f"• {track.get('title', 'Unknown')}\n"
+                    if len(tracks) > 5:
+                        content += f"... and {len(tracks) - 5} more\n"
+
+                await message.reply(content)
+
+            except Exception as e:
+                logger.error(f"Error browsing Juice WRLD content: {e}")
+                await message.reply("❌ Couldn't browse the library right now.")
+
+    async def _resolve_juice_song(self, song_query: str, song_id: Optional[str] = None) -> Optional[Dict[str, Any]]:
+        """
+        Resolve song from natural language query using fuzzy matching
+        Uses fuzzy matching for versioned songs like "Rental (v1)"
+        """
+        if not song_query and not song_id:
+            return None
+
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            return None
+
+        try:
+            if song_id:
+                # Direct ID lookup
+                return await self.bot.juice_wrld_api.get_song(song_id)
+
+            if song_query:
+                # Try exact search first
+                results = await self.bot.juice_wrld_api.search_songs(song_query, limit=10)
+
+                if results:
+                    # Check if top result is strong match
+                    if self.bot.juice_wrld_api._is_strong_title_match(song_query, results[0].get("title", "")):
+                        # Get full details
+                        song_id = results[0].get("id")
+                        if song_id:
+                            return await self.bot.juice_wrld_api.get_song(song_id)
+
+                # Fuzzy matching fallback
+                all_songs = await self.bot.juice_wrld_api.search_all_songs(limit=1000)
+
+                import difflib
+                song_titles = [s.get("title", "") for s in all_songs]
+                matches = difflib.get_close_matches(song_query, song_titles, n=3, cutoff=0.6)
+
+                if matches:
+                    matched_song = next((s for s in all_songs if s.get("title") in matches), None)
+                    if matched_song:
+                        song_id = matched_song.get("id")
+                        if song_id:
+                            return await self.bot.juice_wrld_api.get_song(song_id)
+
+                # Return best search result if no strong matches
+                return results[0] if results else None
+
+        except Exception as e:
+            logger.error(f"Error resolving Juice WRLD song: {e}")
+
+        return None
+
+    async def _looks_like_year(self, text: str) -> bool:
+        """Check if text looks like a year"""
+        try:
+            year = int(text.strip())
+            return 1900 <= year <= 2030
+        except (ValueError, TypeError):
+            return False
+
+    async def _resolve_era(self, era_query: str) -> tuple[Optional[str], Optional[Dict[str, Any]]]:
+        """Resolve era from query"""
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            return None, None
+
+        try:
+            eras = await self.bot.juice_wrld_api.list_eras()
+            
+            # Try exact name match first
+            for era in eras:
+                if era_query.lower() in era.get("name", "").lower():
+                    return era.get("id"), era
+            
+            # Try ID match
+            for era in eras:
+                if era_query.lower() == era.get("id", "").lower():
+                    return era.get("id"), era
+            
+            # Fuzzy matching
+            import difflib
+            era_names = [e.get("name", "") for e in eras]
+            matches = difflib.get_close_matches(era_query, era_names, n=1, cutoff=0.6)
+            
+            if matches:
+                matched_name = matches[0]
+                matched_era = next((e for e in eras if e.get("name") == matched_name), None)
+                if matched_era:
+                    return matched_era.get("id"), matched_era
+
+        except Exception as e:
+            logger.error(f"Error resolving era: {e}")
+
+        return None, None
+
     async def _handle_intent(self, message: discord.Message, intent_result: Dict[str, any]) -> None:
         """
         Route intent to appropriate handler
@@ -182,6 +351,12 @@ class CommandHandler:
 
             elif intent == "juice_stream":
                 await self._handle_juice_stream(message, params.get("query", ""))
+
+            elif intent == "juice_download":
+                await self._handle_juice_download(message, params.get("query", ""))
+
+            elif intent == "juice_browse":
+                await self._handle_juice_browse(message)
 
             elif intent == "juice_collection":
                 await self._handle_juice_collection(message, params.get("query", ""))

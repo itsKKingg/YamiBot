@@ -42,6 +42,15 @@ class JuiceWrldAPI:
     ERAS_ENDPOINT = "/eras/"
     STATS_ENDPOINT = "/stats/"
     RANDOM_ENDPOINT = "/radio/random/"
+    CATEGORIES_ENDPOINT = "/categories/"
+    BROWSE_ENDPOINT = "/files/browse/"
+    STREAM_ENDPOINT = "/stream/"
+    ZIP_CREATE_ENDPOINT = "/zip/create/"
+    ZIP_STATUS_ENDPOINT = "/zip/status/"
+    SEARCH_ENDPOINT = "/search/"
+    BROWSE_ARTIST_ENDPOINT = "/browse/"
+    BROWSE_ALBUM_ENDPOINT = "/browse/"
+    BROWSE_TRACK_ENDPOINT = "/browse/"
 
     COVER_ART_ENDPOINT = "/files/cover-art/"
     DOWNLOAD_ENDPOINT = "/files/download/"
@@ -347,6 +356,163 @@ class JuiceWrldAPI:
         data = await self._make_request(self.ERAS_ENDPOINT)
         eras = [self._normalize_era(r) for r in self._extract_list(data)]
         return eras
+
+    async def get_categories(self) -> List[Dict[str, Any]]:
+        """Get all song categories"""
+        data = await self._make_request(self.CATEGORIES_ENDPOINT)
+        return self._extract_list(data)
+
+    async def list_categories_with_songs(self) -> Dict[str, Any]:
+        """Get categories + songs in each"""
+        data = await self._make_request(self.CATEGORIES_ENDPOINT, params={"include_songs": "true"})
+        if isinstance(data, dict):
+            return data
+        return {}
+
+    async def filter_by_category(self, category: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get songs from specific category"""
+        return await self.filter_songs(category=category, limit=limit)
+
+    async def filter_by_producer(self, producer: str, limit: int = 50) -> List[Dict[str, Any]]:
+        """Get all songs produced by X"""
+        return await self.filter_songs(producer=producer, limit=limit)
+
+    async def filter_by_era(self, era: Union[str, int], limit: int = 50) -> List[Dict[str, Any]]:
+        """Get all songs from specific era"""
+        return await self.filter_songs(era=era, limit=limit)
+
+    async def get_era_details(self, era_id: str) -> Dict[str, Any]:
+        """Get era metadata + song count"""
+        data = await self._make_request(f"{self.ERAS_ENDPOINT}{era_id}/")
+        return self._normalize_era(self._extract_object(data))
+
+    async def get_cover_art(self, song_id: Union[str, int]) -> str:
+        """Get cover art image URL"""
+        song = await self.get_song(song_id)
+        return song.get("cover_art_url", "")
+
+    async def get_stream_url(self, song_id: Union[str, int]) -> str:
+        """Get streaming URL (with HTTP 206 support)"""
+        data = await self._make_request(f"{self.STREAM_ENDPOINT}{song_id}/")
+        if isinstance(data, dict):
+            return data.get("stream_url", "") or data.get("url", "")
+        return data if isinstance(data, str) else ""
+
+    async def get_download_url(self, song_id: Union[str, int]) -> str:
+        """Get direct download URL"""
+        data = await self._make_request(f"{self.SONGS_ENDPOINT}{song_id}/", params={"download": "true"})
+        if isinstance(data, dict):
+            return data.get("download_url", "") or data.get("url", "")
+        return data if isinstance(data, str) else ""
+
+    async def get_stats(self) -> Dict[str, Any]:
+        data = await self._make_request(self.STATS_ENDPOINT)
+        if isinstance(data, dict):
+            return data
+        return {}
+
+    async def create_zip_archive(self, song_ids: List[Union[str, int]], name: str) -> str:
+        """Create ZIP job, return job_id"""
+        payload = {
+            "songs": [str(sid) for sid in song_ids],
+            "name": name
+        }
+        data = await self._make_request(self.ZIP_CREATE_ENDPOINT, method="POST", json_body=payload)
+        if isinstance(data, dict):
+            return data.get("job_id", "") or data.get("id", "")
+        return str(data) if data else ""
+
+    async def check_zip_status(self, job_id: str) -> Dict[str, Any]:
+        """Check ZIP creation status"""
+        data = await self._make_request(f"{self.ZIP_STATUS_ENDPOINT}{job_id}/")
+        return self._extract_object(data)
+
+    async def get_zip_download(self, job_id: str) -> str:
+        """Get ZIP download URL when ready"""
+        data = await self._make_request(f"{self.ZIP_STATUS_ENDPOINT}{job_id}/")
+        if isinstance(data, dict):
+            return data.get("download_url", "") or data.get("url", "")
+        return str(data) if data else ""
+
+    # Utility methods
+    async def search_all_songs(self, limit: int = 1000) -> List[Dict[str, Any]]:
+        """Get all songs for caching/indexing"""
+        data = await self._make_request(self.SONGS_ENDPOINT, params={"limit": str(limit)})
+        songs = [self._normalize_song(r) for r in self._extract_list(data)]
+        return songs
+
+    async def find_song_by_title(self, title: str) -> Dict[str, Any]:
+        """Smart song title matching (for fuzzy search)"""
+        results = await self.search_songs(title, limit=10)
+        if results:
+            # Check if top result is strong match
+            if self._is_strong_title_match(title, results[0].get("title", "")):
+                song_id = results[0].get("id")
+                return await self.get_song(song_id)
+        return results[0] if results else {}
+
+    async def browse_files(self, path: str = "") -> Dict[str, Any]:
+        """Browse directory structure"""
+        params = {}
+        if path:
+            params["path"] = path
+        data = await self._make_request(self.BROWSE_ENDPOINT, params=params)
+        return self._extract_object(data)
+
+    async def browse_artists(self) -> List[Dict[str, Any]]:
+        """Browse available artists"""
+        data = await self._make_request(self.BROWSE_ARTIST_ENDPOINT, params={"type": "artists"})
+        return self._extract_list(data)
+
+    async def browse_albums(self) -> List[Dict[str, Any]]:
+        """Browse available albums"""
+        data = await self._make_request(self.BROWSE_ALBUM_ENDPOINT, params={"type": "albums"})
+        return self._extract_list(data)
+
+    async def browse_tracks(self) -> List[Dict[str, Any]]:
+        """Browse available tracks"""
+        data = await self._make_request(self.BROWSE_TRACK_ENDPOINT, params={"type": "tracks"})
+        return self._extract_list(data)
+
+    async def search_all_content(self, query: str, limit: int = 10) -> Dict[str, Any]:
+        """Search across all content (songs, albums, artists)"""
+        data = await self._make_request(self.SEARCH_ENDPOINT, params={"q": query, "limit": str(limit)})
+        if isinstance(data, dict):
+            return data
+        return {"results": []}
+
+    @staticmethod
+    def _is_strong_title_match(query: str, title: str) -> bool:
+        """Check if song title matches query strongly enough"""
+        if not query or not title:
+            return False
+        
+        query_lower = query.lower().strip()
+        title_lower = title.lower().strip()
+        
+        # Exact match
+        if query_lower == title_lower:
+            return True
+        
+        # Very close match (ignore punctuation, extra spaces)
+        import re
+        query_clean = re.sub(r'[^\w\s]', '', query_lower)
+        title_clean = re.sub(r'[^\w\s]', '', title_lower)
+        query_clean = re.sub(r'\s+', ' ', query_clean)
+        title_clean = re.sub(r'\s+', ' ', title_clean)
+        
+        if query_clean == title_clean:
+            return True
+        
+        # If query is much shorter than title, likely not a strong match
+        if len(query_clean) < len(title_clean) * 0.5:
+            return False
+        
+        # Check if query is contained in title
+        if query_clean in title_clean:
+            return True
+        
+        return False
 
     async def random_song(self) -> Dict[str, Any]:
         data = await self._make_request(self.RANDOM_ENDPOINT)
