@@ -202,12 +202,15 @@ class IntentDetector:
         },
         "juice_search": {
             "keywords": [
-                "find", "search song", "search songs", "song search", "find song", "search for song",
-                "find juice song", "search juice"
+                "find juice song", "search juice", "juice song", "juice track"
             ],
             "patterns": [
-                r"\bsearch\s+(?:for\s+)?(?:a\s+)?(?:song\s+)?([^?]+)",
-                r"\bfind\s+(?:me\s+)?(?:a\s+)?(?:song\s+)?([^?]+)"
+                # Specific Juice WRLD song searches with song titles
+                r"\b(?:search|find)\s+(?:for\s+)?(?:juice\s+(?:song|track)\s+)?([^?]+?)(?:\s+(?:by|from)\s+juice)?\b",
+                r"\bfind\s+(?:me\s+)?(?:juice\s+(?:song|track)\s+)?([^?]+?)(?:\s+(?:by|from)\s+juice)?\b",
+                # Song/track searches specifically mentioning Juice WRLD
+                r"\b(?:search|find)\s+(?:a\s+)?(?:song|track)\s+([^?]+?)(?:\s+(?:by|from)\s+juice)?\b",
+                r"\b(?:search|find)\s+(?:a\s+)?(?:song|track)\s+(?:by|from)\s+juice\s+([^?]+)\b"
             ],
             "confidence": 0.8,
             "extract_param": True
@@ -382,12 +385,20 @@ class IntentDetector:
 
             # If either keyword or pattern matches
             if keyword_match or pattern_match:
-                # Guardrails: avoid treating generic web-search phrasing as Juice song search
+                # Guardrails: prevent misclassification of artist info requests as song searches
                 if intent_name == "juice_search":
-                    weby = ["information", "info", "about", "definition", "define", "how to", "tutorial", "news"]
-                    if any(w in message_lower for w in weby) and not any(
-                        w in message_lower for w in ["song", "track", "lyrics", "juice"]
-                    ):
+                    # Skip if asking for artist information/facts instead of songs
+                    info_keywords = ["birthday", "death", "age", "born", "information", "about", "bio", "biography", "when did", "when was"]
+                    music_keywords = ["song", "track", "lyrics", "music"]
+                    
+                    # If asking for artist info but not explicitly searching for songs
+                    if any(w in message_lower for w in info_keywords) and not any(w in message_lower for w in music_keywords):
+                        logger.debug(f"Skipping juice_search - appears to be artist info request: '{message}'")
+                        continue
+                    
+                    # Additional check: if only "juice" mentioned without song terms, likely not a song search
+                    if "juice" in message_lower and not any(w in message_lower for w in music_keywords + ["find", "search", "look"]):
+                        logger.debug(f"Skipping juice_search - 'juice' mentioned without song search terms: '{message}'")
                         continue
 
                 confidence = intent_data["confidence"]
