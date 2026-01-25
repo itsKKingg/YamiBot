@@ -2,10 +2,10 @@
 Intent Detector for YamiBot
 
 This module classifies user intent from natural language messages.
-Supports keyword-based classification for reliable detection without LLM overhead.
+Supports keyword-based classification and intelligent routing across multiple APIs.
 """
 
-from typing import Dict, Optional, List
+from typing import Dict, Optional, List, Any, Tuple
 import re
 
 from .utils.logger import setup_logging
@@ -15,10 +15,11 @@ logger = setup_logging(__name__)
 
 class IntentDetector:
     """
-    Detects user intent from natural language messages using keyword patterns
+    Detects user intent from natural language messages and multimodal context.
+    Intelligently routes requests to specialized APIs (Juice WRLD, Genius, SoundCloud, Gemini).
     """
 
-    # Intent definitions with keywords and patterns (ordered by specificity)
+    # Intent definitions with keywords and patterns (ordered by priority/specificity)
     INTENTS = {
         "clear_memory": {
             "keywords": [
@@ -68,564 +69,310 @@ class IntentDetector:
             "confidence": 0.9,
             "extract_param": True
         },
-        # ============ JUICE WRLD API (PRIMARY MUSIC SOURCE) ============
-        "juice_random": {
+        
+        # ============ MODEL ROUTING & ANALYSIS ============
+        "math_code_analysis": {
             "keywords": [
-                "random track", "random song", "random juice", "radio", "shuffle",
-                "surprise me", "play something random"
+                "solve", "calculate", "equation", "formula", "python code", 
+                "javascript code", "debug code", "analyze code", "explain code"
             ],
             "patterns": [
-                r"\brandom\s+(?:juice\s+)?(?:track|song)\b",
-                r"\b(?:juice\s+)?radio\b",
-                r"\bshuffle\b"
+                r"\b(?:solve|calculate|math)\s+([^?]+)",
+                r"\b(?:write|create|generate)\s+(?:a\s+)?(?:[\w\s]+\s+)?(?:code|script|function|program)\b",
+                r"\bdebug\s+([^?]+)",
+                r"\banalyze\s+([^?]+)",
+                r"\bexplain\s+this\s+code\b"
             ],
+            "confidence": 0.9,
+            "extract_param": True
+        },
+
+        # ============ JUICE WRLD API (PRIMARY MUSIC SOURCE) ============
+        "juice_random": {
+            "keywords": ["random track", "random song", "random juice", "shuffle juice"],
+            "patterns": [r"\brandom\s+(?:juice\s+)?(?:track|song)\b", r"\b(?:juice\s+)?radio\b", r"\bshuffle\b"],
             "confidence": 0.9
         },
         "juice_stats": {
-            "keywords": [
-                "juice stats", "how many juice", "how many songs", "database stats",
-                "overall stats", "song stats", "stats"
-            ],
-            "patterns": [
-                r"\bhow\s+many\s+(?:juice\s+)?songs?\b",
-                r"\b(?:juice\s+)?stats\b",
-                r"\bdatabase\s+stats\b"
-            ],
+            "keywords": ["juice stats", "database stats", "overall stats", "song stats"],
+            "patterns": [r"\bhow\s+many\s+(?:juice\s+)?songs?\b", r"\b(?:juice\s+)?stats\b", r"\bdatabase\s+stats\b"],
             "confidence": 0.85
         },
         "juice_eras_list": {
-            "keywords": [
-                "list eras", "show eras", "eras", "era list", "timeline"
-            ],
-            "patterns": [
-                r"\blist\s+all\s+eras\b",
-                r"\bshow\s+all\s+eras\b",
-                r"\beras\b",
-                r"\bera\s+timeline\b"
-            ],
+            "keywords": ["list eras", "era list", "era timeline"],
+            "patterns": [r"\blist\s+all\s+eras\b", r"\bshow\s+all\s+eras\b", r"\beras\b", r"\bera\s+timeline\b"],
             "confidence": 0.8
         },
         "juice_era_filter": {
-            "keywords": [
-                "songs from", "from era", "era songs"
-            ],
-            "patterns": [
-                r"\bsongs?\s+from\s+([^?]+?)(?:\s+era)?\b",
-                r"\bfrom\s+the\s+([^?]+?)\s+era\b",
-                r"\b([^?]+?)\s+era\s+songs\b"
-            ],
+            "keywords": ["songs from era", "from era", "era songs"],
+            "patterns": [r"\bsongs?\s+from\s+([^?]+?)(?:\s+era)?\b", r"\bfrom\s+the\s+([^?]+?)\s+era\b", r"\b([^?]+?)\s+era\s+songs\b"],
             "confidence": 0.85,
             "extract_param": True
         },
         "juice_category_filter": {
-            "keywords": [
-                "unreleased", "unsurfaced", "released", "studio session", "studio sessions"
-            ],
-            "patterns": [
-                r"\b(?:show\s+me\s+)?(released|unreleased|unsurfaced|studio_session|studio\s+sessions?)\s+(?:songs?|tracks?)\b",
-                r"\bsongs?\s+in\s+(released|unreleased|unsurfaced|studio_session)\b"
-            ],
+            "keywords": ["unreleased songs", "unreleased tracks", "unsurfaced songs", "released songs", "studio sessions"],
+            "patterns": [r"\b(?:show\s+me\s+)?(released|unreleased|unsurfaced|studio_session|studio\s+sessions?)\s+(?:songs?|tracks?)\b", r"\bsongs?\s+in\s+(released|unreleased|unsurfaced|studio_session)\b"],
             "confidence": 0.85,
             "extract_param": True
         },
         "juice_lyric_search": {
-            "keywords": [
-                "find lyrics with", "songs with lyric", "songs containing", "lyrics with"
-            ],
-            "patterns": [
-                r"\bfind\s+lyrics\s+with\s+([^?]+)",
-                r"\bsongs?\s+containing\s+([^?]+)",
-                r"\bsongs?\s+with\s+lyrics?\s+([^?]+)",
-                r"\blyrics?\s+search\s+([^?]+)"
-            ],
+            "keywords": ["find lyrics with", "songs with lyric", "songs containing", "lyrics with"],
+            "patterns": [r"\bfind\s+lyrics\s+with\s+([^?]+)", r"\bsongs?\s+containing\s+([^?]+)", r"\bsongs?\s+with\s+lyrics?\s+([^?]+)", r"\blyrics?\s+search\s+([^?]+)"],
             "confidence": 0.9,
             "extract_param": True
         },
         "juice_producer_filter": {
-            "keywords": [
-                "produced by", "songs produced by", "what was produced by"
-            ],
-            "patterns": [
-                r"\bsongs?\s+produced\s+by\s+([^?]+)",
-                r"\bwhat\s+was\s+produced\s+by\s+([^?]+)"
-            ],
+            "keywords": ["produced by", "songs produced by"],
+            "patterns": [r"\bsongs?\s+produced\s+by\s+([^?]+)", r"\bwhat\s+was\s+produced\s+by\s+([^?]+)"],
             "confidence": 0.85,
             "extract_param": True
         },
         "juice_song_info": {
-            "keywords": [
-                "song details", "details for", "when was", "where was", "who produced", "recorded", "produced"
-            ],
-            "patterns": [
-                r"\bwho\s+produced\s+([^?]+)\b",
-                r"\bwhen\s+was\s+([^?]+)\s+recorded\b",
-                r"\bwhere\s+was\s+([^?]+)\s+recorded\b",
-                r"\bdetails\s+for\s+([^?]+)",
-                r"\bsong\s+details\s+for\s+([^?]+)",
-                r"\b(?:song\s+)?id\s+(\d+)\b"
-            ],
+            "keywords": ["song details", "who produced", "bpm of", "tempo of", "key of", "scale of"],
+            "patterns": [r"\bwho\s+produced\s+([^?]+)\b", r"\bwhen\s+was\s+([^?]+)\s+recorded\b", r"\bwhere\s+was\s+([^?]+)\s+recorded\b", r"\bdetails\s+for\s+([^?]+)", r"\bsong\s+details\s+for\s+([^?]+)", r"\b(?:bpm|tempo|key|scale)\s+(?:of|for)\s+([^?]+)", r"\b(?:song\s+)?id\s+(\d+)\b"],
             "confidence": 0.85,
             "extract_param": True
         },
         "juice_cover_art": {
-            "keywords": [
-                "cover art", "artwork", "album art"
-            ],
-            "patterns": [
-                r"\b(?:cover\s+art|artwork|album\s+art)\s+(?:for\s+)?([^?]+)"
-            ],
+            "keywords": ["cover art", "artwork", "album art"],
+            "patterns": [r"\b(?:cover\s+art|artwork|album\s+art)\s+(?:for\s+)?([^?]+)"],
             "confidence": 0.85,
             "extract_param": True
         },
         "juice_stream": {
-            "keywords": [
-                "streaming link", "listen link", "listen here", "download link", "stream"
-            ],
-            "patterns": [
-                r"\b(?:streaming\s+link|listen\s+link|download\s+link)\s+(?:for\s+)?([^?]+)",
-                r"\blisten\s+to\s+([^?]+)"
-            ],
+            "keywords": ["streaming link", "listen link", "download link"],
+            "patterns": [r"\b(?:streaming\s+link|listen\s+link|download\s+link)\s+(?:for\s+)?([^?]+)", r"\blisten\s+to\s+([^?]+)"],
             "confidence": 0.85,
             "extract_param": True
         },
         "juice_collection": {
-            "keywords": [
-                "zip", "archive", "collection", "download era", "download zip"
-            ],
-            "patterns": [
-                r"\b(?:make|generate|create)\s+(?:a\s+)?(?:zip|archive)\s+(?:of\s+)?([^?]+)",
-                r"\bdownload\s+(?:a\s+)?(?:zip|archive)\s+(?:of\s+)?([^?]+)",
-                r"\bzip\s+of\s+([^?]+)"
-            ],
+            "keywords": ["zip of", "archive of", "collection of"],
+            "patterns": [r"\b(?:make|generate|create)\s+(?:a\s+)?(?:zip|archive)\s+(?:of\s+)?([^?]+)", r"\bdownload\s+(?:a\s+)?(?:zip|archive)\s+(?:of\s+)?([^?]+)", r"\bzip\s+of\s+([^?]+)"],
+            "confidence": 0.85,
+            "extract_param": True
+        },
+
+        # ============ SPECIALIZED MUSIC SEARCH ============
+        "music_search": {
+            "keywords": ["soundcloud search", "find on soundcloud", "soundcloud track"],
+            "patterns": [r"\bsoundcloud\s+(?:search\s+)?([^?]+)", r"\bfind\s+(?:on\s+)?soundcloud\s+([^?]+)", r"\bfind\s+(?:a\s+)?song\s+(?:by\s+)?([^?]+)", r"\bsearch\s+(?:for\s+)?(?:a\s+)?song\s+(?:by\s+)?([^?]+)", r"\bwhat(?:'s|s)?\s+the\s+song\s+(?:that\s+goes\s+)?([^?]+)", r"\bfind\s+music\s+([^?]+)", r"\bsearch\s+music\s+([^?]+)", r"\bfind\s+track\s+([^?]+)"],
             "confidence": 0.85,
             "extract_param": True
         },
         "juice_search": {
-            "keywords": [
-                "find juice song", "search juice", "juice song", "juice track"
-            ],
-            "patterns": [
-                # Specific Juice WRLD song searches with song titles
-                r"\b(?:search|find)\s+(?:for\s+)?(?:juice\s+(?:song|track)\s+)?([^?]+?)(?:\s+(?:by|from)\s+juice)?\b",
-                r"\bfind\s+(?:me\s+)?(?:juice\s+(?:song|track)\s+)?([^?]+?)(?:\s+(?:by|from)\s+juice)?\b",
-                # Song/track searches specifically mentioning Juice WRLD
-                r"\b(?:search|find)\s+(?:a\s+)?(?:song|track)\s+([^?]+?)(?:\s+(?:by|from)\s+juice)?\b",
-                r"\b(?:search|find)\s+(?:a\s+)?(?:song|track)\s+(?:by|from)\s+juice\s+([^?]+)\b"
-            ],
+            "keywords": ["find juice song", "search juice", "juice track", "play juice"],
+            "patterns": [r"\b(?:search|find|play)\s+(?:for\s+)?(?:juice\s+(?:song|track)\s+)?([^?]+?)(?:\s+(?:by|from)\s+juice)?\b", r"\bfind\s+(?:me\s+)?(?:juice\s+(?:song|track)\s+)?([^?]+?)(?:\s+(?:by|from)\s+juice)?\b", r"\b(?:search|find)\s+(?:a\s+)?song\s+([^?]+?)(?:\s+(?:by|from)\s+juice)?\b", r"\b(?:search|find)\s+(?:a\s+)?(?:song|track)\s+(?:by\s+)?juice\s+([^?]+)\b"],
             "confidence": 0.8,
             "extract_param": True
         },
-        "music_lyrics": {
-            "keywords": [
-                "lyrics", "lyric", "words to", "what are the lyrics",
-                "show me lyrics", "get lyrics", "find lyrics"
-            ],
-            "patterns": [
-                r"\b(?:lyrics?|words?)\s+(?:for\s+)?([^?]+)",
-                r"\bwhat\s+are\s+the\s+lyrics?\s+for\s+([^?]+)"
-            ],
+        
+        # ============ WEB SEARCH ============
+        "search": {
+            "keywords": ["search for", "look up", "google", "what is", "who is", "when was"],
+            "patterns": [r"\bsearch\s+(for\s+)?([^?]+)", r"\blook\s+up\s+([^?]+)", r"\bgoogle\s+([^?]+)", r"\bwhat\s+is\s+(?!the\s+lyrics|the\s+meaning)([^?]+)", r"\bwho\s+is\s+(?!artist|singer|rapper|produced)([^?]+)", r"\bwhen\s+was\s+(?!recorded|released)([^?]+)"],
             "confidence": 0.85,
             "extract_param": True
         },
-        "music_search": {
-            "keywords": [
-                "find song", "search for song", "what song",
-                "soundcloud", "find music", "search music", "find track"
-            ],
-            "patterns": [
-                r"\bfind\s+(?:a\s+)?song\s+(?:by\s+)?([^?]+)",
-                r"\bsearch\s+(?:for\s+)?(?:a\s+)?song\s+(?:by\s+)?([^?]+)",
-                r"\bwhat(?:'s|s)?\s+the\s+song\s+(?:that\s+goes\s+)?([^?]+)",
-                r"\bsoundcloud\s+(?:search\s+)?([^?]+)",
-                r"\bfind\s+(?:on\s+)?soundcloud\s+([^?]+)",
-                r"\bfind\s+music\s+([^?]+)",
-                r"\bsearch\s+music\s+([^?]+)",
-                r"\bfind\s+track\s+([^?]+)"
-            ],
-            "confidence": 0.8,
+
+        # ============ GENERIC MUSIC INTENTS ============
+        "music_lyrics": {
+            "keywords": ["lyrics for", "words to", "what are the lyrics", "find lyrics"],
+            "patterns": [r"\b(?:lyrics?|words?)\s+(?:for|of|to)\s+([^?]+)", r"\bwhat\s+are\s+the\s+lyrics?\s+for\s+([^?]+)"],
+            "confidence": 0.85,
             "extract_param": True
         },
         "music_artist": {
-            "keywords": [
-                "tell me about", "who is", "artist", "singer", "rapper",
-                "musician", "band", "artist info", "artist bio"
-            ],
-            "patterns": [
-                r"\btell\s+me\s+about\s+([^?]+)",
-                r"\bwho\s+is\s+([^?]+)",
-                r"\bartist\s+info\s+for\s+([^?]+)",
-                r"\bartist\s+bio\s+for\s+([^?]+)"
-            ],
+            "keywords": ["artist info", "artist bio", "tell me about artist"],
+            "patterns": [r"\btell\s+me\s+about\s+(?:the\s+artist\s+|the\s+singer\s+|the\s+rapper\s+)?([^?]+)", r"\bwho\s+is\s+(?:the\s+artist\s+|the\s+singer\s+|the\s+rapper\s+)([^?]+)", r"\bartist\s+info\s+for\s+([^?]+)", r"\bartist\s+bio\s+for\s+([^?]+)"],
             "confidence": 0.85,
             "extract_param": True
         },
         "music_annotation": {
-            "keywords": [
-                "what does", "meaning of", "annotation",
-                "what's the meaning", "interpretation", "explain lyrics"
-            ],
-            "patterns": [
-                r"\bwhat\s+does\s+([^?]+)\s+mean\b",
-                r"\bmeaning\s+of\s+([^?]+)",
-                r"\bexplain\s+(?:lyrics?|song)\s+([^?]+)",
-                r"\bwhat(?:'s|s)\s+the\s+meaning\s+of\s+([^?]+)",
-                r"\bannotation\s+for\s+([^?]+)"
-            ],
+            "keywords": ["meaning of", "explain lyrics", "lyric meaning"],
+            "patterns": [r"\bwhat\s+does\s+([^?]+)\s+mean\b", r"\bmeaning\s+of\s+([^?]+)", r"\bexplain\s+(?:lyrics?|song)\s+([^?]+)", r"\bwhat(?:'s|s)\s+the\s+meaning\s+of\s+([^?]+)", r"\bannotation\s+for\s+([^?]+)"],
             "confidence": 0.8,
             "extract_param": True
         },
+
+        # ============ SYSTEM ============
         "model_switch": {
-            "keywords": [
-                "use model", "switch to", "change model", "switch model",
-                "use gemini", "use cerebras", "use groq", "use mistral",
-                "change to"
-            ],
-            "patterns": [
-                r"\buse\s+(?:model\s+)?([^?]+)",
-                r"\bswitch\s+(?:to\s+)?(?:model\s+)?([^?]+)",
-                r"\bchange\s+(?:to\s+)?(?:model\s+)?([^?]+)"
-            ],
+            "keywords": ["use model", "switch to model", "change model"],
+            "patterns": [r"\buse\s+(?:model\s+)?([^?]+)", r"\bswitch\s+(?:to\s+)?(?:model\s+)?([^?]+)", r"\bchange\s+(?:to\s+)?(?:model\s+)?([^?]+)"],
             "confidence": 0.85,
             "extract_param": True
         },
         "model_list": {
-            "keywords": [
-                "available models", "what models", "list models", "which models",
-                "show models", "what ai models", "what models can you use"
-            ],
-            "patterns": [
-                r"\bavailable\s+models\b",
-                r"\bwhat\s+models\b",
-                r"\blist\s+models\b",
-                r"\bwhich\s+models\b",
-                r"\bshow\s+models\b",
-                r"\bwhat\s+ai\s+models\b"
-            ],
+            "keywords": ["available models", "list models", "show models"],
+            "patterns": [r"\bavailable\s+models\b", r"\bwhat\s+models\b", r"\blist\s+models\b"],
             "confidence": 0.9
         },
         "status": {
-            "keywords": [
-                "status", "how are you", "how are you doing", "stats",
-                "bot status", "system status", "health check"
-            ],
-            "patterns": [
-                r"\bstatus\b",
-                r"\bhow\s+are\s+you\b(?!\s+doing)",
-                r"\bhow\s+are\s+you\s+doing\b",
-                r"\bstats\b",
-                r"\bbot\s+status\b",
-                r"\bsystem\s+status\b",
-                r"\bhealth\s+check\b"
-            ],
+            "keywords": ["bot status", "system status", "health check"],
+            "patterns": [r"\bstatus\b", r"\bbot\s+status\b", r"\bsystem\s+status\b", r"\bhealth\s+check\b", r"\bhow\s+are\s+you\s+doing\b"],
             "confidence": 0.85
         },
         "remember_preference": {
-            "keywords": [
-                "remember that", "note that", "i prefer", "preference",
-                "keep in mind", "remember this"
-            ],
-            "patterns": [
-                r"\bremember\s+(?:that\s+)?([^?]+)",
-                r"\bnote\s+(?:that\s+)?([^?]+)",
-                r"\bi\s+prefer\s+([^?]+)",
-                r"\bkeep\s+in\s+mind\s+([^?]+)"
-            ],
+            "keywords": ["remember that", "note that", "i prefer"],
+            "patterns": [r"\bremember\s+(?:that\s+)?([^?]+)", r"\bnote\s+(?:that\s+)?([^?]+)", r"\bi\s+prefer\s+([^?]+)"],
             "confidence": 0.85,
-            "extract_param": True
-        },
-        "search": {
-            "keywords": [
-                "search for", "look up", "find", "research", "google",
-                "search about", "find information about", "look for"
-            ],
-            "patterns": [
-                r"\bsearch\s+(for\s+)?([^?]+)",
-                r"\blook\s+up\s+([^?]+)",
-                r"\bfind\s+([^?]+)",
-                r"\bresearch\s+([^?]+)",
-                r"\bgoogle\s+([^?]+)"
-            ],
-            "confidence": 0.9,
             "extract_param": True
         }
     }
 
     @staticmethod
-    def classify_intent(message: str) -> Dict[str, any]:
+    def classify_intent(message: str, attachments: Optional[List[Any]] = None) -> Dict[str, Any]:
         """
-        Classify the intent of a user message
-
-        Args:
-            message: The user's message
-
-        Returns:
-            Dictionary containing:
-            - intent: The detected intent (or "chat" if no special intent)
-            - confidence: Confidence score (0-1)
-            - params: Extracted parameters (if any)
-            - api_source: Recommended API source (music intents only)
+        Classify the intent of a user message with multi-API routing and context awareness.
         """
         message_lower = message.lower().strip()
-        
         logger.debug(f"Classifying intent for message: '{message}'")
+        attachment_info = IntentDetector._detect_attachments(attachments)
 
-        # Check each intent
+        implicit_music = IntentDetector._detect_implicit_music(message_lower)
+        if implicit_music:
+            logger.info(f"🎯 Detected implicit music intent: {implicit_music['intent']}")
+            implicit_music["attachment_info"] = attachment_info
+            return implicit_music
+
         for intent_name, intent_data in IntentDetector.INTENTS.items():
-            # Check keyword matches first (more precise)
             keyword_match = IntentDetector._check_keyword_match(message_lower, intent_data["keywords"])
-            
-            # Check pattern matches
             pattern_match, matched_pattern = IntentDetector._check_pattern_match(message_lower, intent_data.get("patterns", []))
 
-            # Log matches for debugging
-            if keyword_match:
-                logger.debug(f"Keyword match for intent '{intent_name}'")
-            if pattern_match:
-                logger.debug(f"Pattern match for intent '{intent_name}': {matched_pattern}")
-
-            # If either keyword or pattern matches
             if keyword_match or pattern_match:
-                # Guardrails: prevent misclassification of artist info requests as song searches
-                if intent_name == "juice_search":
-                    # Skip if asking for artist information/facts instead of songs
-                    info_keywords = ["birthday", "death", "age", "born", "information", "about", "bio", "biography", "when did", "when was"]
-                    music_keywords = ["song", "track", "lyrics", "music"]
-                    
-                    # If asking for artist info but not explicitly searching for songs
-                    if any(w in message_lower for w in info_keywords) and not any(w in message_lower for w in music_keywords):
-                        logger.debug(f"Skipping juice_search - appears to be artist info request: '{message}'")
-                        continue
-                    
-                    # Additional check: if only "juice" mentioned without song terms, likely not a song search
-                    if "juice" in message_lower and not any(w in message_lower for w in music_keywords + ["find", "search", "look"]):
-                        logger.debug(f"Skipping juice_search - 'juice' mentioned without song search terms: '{message}'")
-                        continue
+                if intent_name == "juice_search" and IntentDetector._is_artist_info_request(message_lower):
+                    continue
 
                 confidence = intent_data["confidence"]
+                if attachment_info["has_attachments"]:
+                    if intent_name == "math_code_analysis" and any(t in attachment_info["types"] for t in ["image", "document"]):
+                        confidence = min(1.0, confidence + 0.1)
 
-                # Extract parameters if needed
                 params = {}
                 if intent_data.get("extract_param", False):
                     params = IntentDetector._extract_parameters(message_lower, intent_name, matched_pattern)
 
-                # Determine API source for music intents
-                api_source = None
-                if intent_name.startswith("music_") or intent_name.startswith("juice_"):
-                    api_source = IntentDetector.determine_api_source(message_lower)
+                api_source = IntentDetector.determine_api_source(message_lower, intent_name)
+                logger.info(f"🎯 Detected intent: {intent_name} (confidence: {confidence}, api_source: {api_source})")
+                return {"intent": intent_name, "confidence": confidence, "params": params, "api_source": api_source, "attachment_info": attachment_info}
 
-                logger.info(f"Detected intent: {intent_name} (confidence: {confidence}, api_source: {api_source})")
-                return {
-                    "intent": intent_name,
-                    "confidence": confidence,
-                    "params": params,
-                    "api_source": api_source
-                }
+        if attachment_info["has_attachments"]:
+            return {"intent": "multimodal", "confidence": 0.8, "params": {"types": attachment_info["types"]}, "api_source": "gemini", "attachment_info": attachment_info}
 
-        # No special intent detected - default to chat
-        logger.debug("No intent detected - defaulting to chat")
-        return {
-            "intent": "chat",
-            "confidence": 1.0,
-            "params": {},
-            "api_source": None
-        }
+        return {"intent": "chat", "confidence": 1.0, "params": {}, "api_source": "llm", "attachment_info": attachment_info}
 
     @staticmethod
-    def _check_keyword_match(message: str, keywords: List[str]) -> bool:
-        """
-        Check if any keyword matches the message using word boundaries
-        
-        Args:
-            message: Lowercase message
-            keywords: List of keywords to check
-            
-        Returns:
-            True if any keyword matches
-        """
-        # Remove common punctuation that might interfere
-        message_clean = re.sub(r'[^\w\s]', ' ', message)
-        
-        for keyword in keywords:
-            keyword_clean = re.sub(r'[^\w\s]', ' ', keyword.lower())
-            
-            # Use word boundaries to ensure we match whole words
-            pattern = r'\b' + re.escape(keyword_clean) + r'\b'
-            if re.search(pattern, message_clean):
-                return True
-                
+    def _detect_attachments(attachments: Optional[List[Any]]) -> Dict[str, Any]:
+        """Detect multimodal attachments and their types"""
+        if not attachments: return {"has_attachments": False, "types": [], "count": 0}
+        types = []
+        for att in attachments:
+            content_type = getattr(att, "content_type", "") or ""
+            filename = getattr(att, "filename", "").lower()
+            if "image" in content_type or any(filename.endswith(ext) for ext in [".jpg", ".jpeg", ".png", ".webp", ".gif"]): types.append("image")
+            elif "video" in content_type or any(filename.endswith(ext) for ext in [".mp4", ".mov", ".webm", ".mkv"]): types.append("video")
+            elif "audio" in content_type or any(filename.endswith(ext) for ext in [".mp3", ".wav", ".ogg", ".m4a", ".flac"]): types.append("audio")
+            elif "text" in content_type or any(filename.endswith(ext) for ext in [".txt", ".py", ".js", ".json", ".md", ".pdf", ".csv"]): types.append("document")
+        return {"has_attachments": True, "types": list(set(types)), "count": len(attachments)}
+
+    @staticmethod
+    def _detect_implicit_music(message: str) -> Optional[Dict[str, Any]]:
+        """Detect implicit music requests like 'Rental by Juice'"""
+        if any(w in message for w in ["produced by", "directed by", "recorded by"]): return None
+        match = re.search(r"\b(.+?)\s+by\s+([^?]+?)\b", message, re.IGNORECASE)
+        if match:
+            song, artist = match.group(1).strip(), match.group(2).strip()
+            intent = "music_lyrics" if any(w in message for w in ["lyrics", "words"]) else "music_search"
+            is_juice = any(name in artist.lower() for name in ["juice", "999", "jarad", "juice wrld"])
+            if is_juice:
+                intent = "juice_lyric_search" if "lyrics" in message else "juice_search"
+                return {"intent": intent, "confidence": 0.9, "params": {"query": song, "artist": artist}, "api_source": "juice_wrld"}
+            elif artist.lower() in ["xxxtentacion", "lil uzi vert", "polo g", "trippie redd"]:
+                return {"intent": intent, "confidence": 0.85, "params": {"query": f"{song} {artist}", "song": song, "artist": artist}, "api_source": "genius" if intent == "music_lyrics" else "juice_wrld"}
+            else:
+                return {"intent": intent, "confidence": 0.8, "params": {"query": f"{song} {artist}", "song": song, "artist": artist}, "api_source": "genius" if intent == "music_lyrics" else "juice_wrld"}
+        bpm_match = re.search(r"\b(?:bpm|tempo|key|scale)\s+(?:of|for)\s+([^?]+)", message, re.IGNORECASE)
+        if bpm_match: return {"intent": "juice_song_info", "confidence": 0.9, "params": {"query": bpm_match.group(1).strip(), "info_type": "details"}, "api_source": "juice_wrld"}
+        return None
+
+    @staticmethod
+    def determine_api_source(message: str, intent: Optional[str] = None) -> str:
+        """Intelligently determine which API to route the request to."""
+        message_lower = message.lower()
+        if "gemini" in message_lower or intent == "math_code_analysis": return "gemini"
+        if "soundcloud" in message_lower: return "soundcloud"
+        if intent == "music_lyrics":
+            if any(w in message_lower for w in ["juice", "lucid dreams", "rental", "all girls"]): return "juice_wrld"
+            return "genius"
+        if "juice" in message_lower or (intent and intent.startswith("juice_")): return "juice_wrld"
+        if intent and intent.startswith("music_"): return "juice_wrld"
+        return "llm"
+
+    @staticmethod
+    def _is_artist_info_request(message: str) -> bool:
+        """Check if message is asking for artist info rather than a song"""
+        info_keywords = ["birthday", "death", "age", "born", "information", "about", "bio", "biography", "when did", "when was"]
+        music_keywords = ["song", "track", "lyrics", "music"]
+        if any(w in message for w in info_keywords) and not any(w in message for w in music_keywords): return True
+        if "juice" in message and not any(w in message for w in music_keywords + ["find", "search", "look", "play"]): return True
         return False
 
     @staticmethod
-    def _check_pattern_match(message: str, patterns: List[str]) -> tuple:
-        """
-        Check if any pattern matches the message
-        
-        Args:
-            message: Lowercase message
-            patterns: List of regex patterns
-            
-        Returns:
-            Tuple of (bool, matched_pattern)
-        """
+    def _check_keyword_match(message: str, keywords: List[str]) -> bool:
+        """Check keyword match with word boundaries and punctuation cleanup"""
+        message_clean = re.sub(r'[^\w\s]', ' ', message)
+        for keyword in keywords:
+            keyword_clean = re.sub(r'[^\w\s]', ' ', keyword.lower())
+            pattern = r'\b' + re.escape(keyword_clean) + r'\b'
+            if re.search(pattern, message_clean): return True
+        return False
+
+    @staticmethod
+    def _check_pattern_match(message: str, patterns: List[str]) -> Tuple[bool, Optional[str]]:
+        """Check regex pattern matches"""
         for pattern in patterns:
             try:
-                if re.search(pattern, message, re.IGNORECASE):
-                    return True, pattern
-            except re.error as e:
-                logger.warning(f"Invalid regex pattern '{pattern}': {e}")
-                continue
-                
+                if re.search(pattern, message, re.IGNORECASE): return True, pattern
+            except re.error as e: continue
         return False, None
 
     @staticmethod
-    def determine_api_source(message: str) -> Optional[str]:
-        """
-        Determine which API to use based on message content.
-
-        API Priority Logic:
-        - If "soundcloud" explicitly mentioned → "soundcloud"
-        - Otherwise → "juice_wrld" (primary)
-
-        Args:
-            message: The user's message (lowercase)
-
-        Returns:
-            API source: "juice_wrld" or "soundcloud"
-        """
-        # Priority 1: SoundCloud - ONLY when explicitly mentioned
-        if "soundcloud" in message:
-            logger.debug("API source: soundcloud (explicitly requested)")
-            return "soundcloud"
-
-        # Default: Juice WRLD API is the primary music source
-        logger.debug("API source: juice_wrld (default)")
-        return "juice_wrld"
-
-    @staticmethod
-    def _extract_parameters(message: str, intent: str, pattern: str) -> Dict[str, any]:
-        """
-        Extract parameters from message based on intent and matched pattern
-
-        Args:
-            message: The user's message
-            intent: The detected intent
-            pattern: The matched regex pattern
-
-        Returns:
-            Dictionary of extracted parameters
-        """
+    def _extract_parameters(message: str, intent: str, pattern: str) -> Dict[str, Any]:
+        """Extract parameters based on intent and matched pattern"""
         params = {}
-
         try:
             match = re.search(pattern, message, re.IGNORECASE)
-            if not match:
-                return params
-
-            if intent == "search":
-                # Extract search query - use last non-empty group
-                if match.lastindex and match.lastindex >= 1:
-                    # Find the last capturing group that has content
-                    for i in range(match.lastindex, 0, -1):
-                        group_content = match.group(i).strip()
-                        if group_content:
-                            params["query"] = group_content
-                            break
-
-            elif intent == "model_switch":
-                # Extract model name
-                if match.lastindex and match.lastindex >= 1:
-                    params["model_name"] = match.group(1).strip()
-
-            elif intent == "remember_preference":
-                # Extract preference
-                if match.lastindex and match.lastindex >= 1:
-                    params["preference"] = match.group(1).strip()
-
-            elif intent == "clear_specific":
-                # Extract number of messages
-                if match.lastindex and match.lastindex >= 1:
-                    params["count"] = int(match.group(1))
-
-            elif intent == "juice_era_filter":
-                if match.lastindex and match.lastindex >= 1:
-                    params["era"] = match.group(1).strip()
-
+            if not match: return params
+            def get_best_group(m):
+                if m.lastindex and m.lastindex >= 1:
+                    for i in range(m.lastindex, 0, -1):
+                        content = m.group(i).strip()
+                        if content: return content
+                return ""
+            if intent in ["search", "math_code_analysis"]: params["query"] = get_best_group(match)
+            elif intent == "model_switch": params["model_name"] = match.group(1).strip()
+            elif intent == "remember_preference": params["preference"] = match.group(1).strip()
+            elif intent == "clear_specific": params["count"] = int(match.group(1))
+            elif intent == "juice_era_filter": params["era"] = match.group(1).strip()
             elif intent == "juice_category_filter":
-                if match.lastindex and match.lastindex >= 1:
-                    raw = match.group(1).strip().lower()
-                    raw = raw.replace(" ", "_")
-                    if raw.endswith("s") and raw.startswith("studio_"):
-                        raw = "studio_session"
-                    params["category"] = raw
-
-            elif intent == "juice_lyric_search":
-                if match.lastindex and match.lastindex >= 1:
-                    params["phrase"] = match.group(1).strip().strip('"\'')
-
-            elif intent == "juice_producer_filter":
-                if match.lastindex and match.lastindex >= 1:
-                    params["producer"] = match.group(1).strip()
-
+                raw = match.group(1).strip().lower().replace(" ", "_")
+                if raw.endswith("s") and raw.startswith("studio_"): raw = "studio_session"
+                params["category"] = raw
+            elif intent == "juice_lyric_search": params["phrase"] = match.group(1).strip().strip('"\'')
+            elif intent == "juice_producer_filter": params["producer"] = match.group(1).strip()
             elif intent == "juice_song_info":
-                if match.lastindex and match.lastindex >= 1:
-                    q = match.group(1).strip()
-                    if q.isdigit():
-                        params["song_id"] = int(q)
-                    else:
-                        params["query"] = q
-
-                # Determine which metadata the user is asking for
-                if "produced" in message:
-                    params["info_type"] = "producer"
-                elif "where" in message and "recorded" in message:
-                    params["info_type"] = "studio"
-                elif "when" in message and "recorded" in message:
-                    params["info_type"] = "recording_date"
-                elif "recorded" in message:
-                    params["info_type"] = "recording_date"
-                else:
-                    params["info_type"] = "details"
-
-            elif intent in ["juice_cover_art", "juice_stream", "juice_collection", "juice_search"]:
-                if match.lastindex and match.lastindex >= 1:
-                    params["query"] = match.group(1).strip()
-
-            elif intent in ["music_lyrics", "music_search", "music_artist", "music_annotation"]:
-                # Extract song/artist name
-                if match.lastindex and match.lastindex >= 1:
-                    params["query"] = match.group(1).strip()
-
-            logger.debug(f"Extracted parameters for {intent}: {params}")
-
-        except Exception as e:
-            logger.warning(f"Error extracting parameters for intent {intent}: {e}")
-            # Return empty params on error
-
+                q = match.group(1).strip()
+                if q.isdigit(): params["song_id"] = int(q)
+                else: params["query"] = q
+                if "produced" in message: params["info_type"] = "producer"
+                elif "recorded" in message: params["info_type"] = "recording_date"
+                elif any(w in message for w in ["bpm", "tempo"]): params["info_type"] = "bpm"
+                elif any(w in message for w in ["key", "scale"]): params["info_type"] = "key"
+                else: params["info_type"] = "details"
+            elif intent in ["juice_cover_art", "juice_stream", "juice_collection", "juice_search"]: params["query"] = match.group(1).strip()
+            elif intent in ["music_lyrics", "music_search", "music_artist", "music_annotation"]: params["query"] = match.group(1).strip()
+        except Exception as e: pass
         return params
 
     @staticmethod
     def get_available_intents() -> List[str]:
-        """
-        Get list of all available intents
-
-        Returns:
-            List of intent names
-        """
         return list(IntentDetector.INTENTS.keys())
-
-    @staticmethod
-    def get_intent_description(intent_name: str) -> Optional[str]:
-        """
-        Get description for an intent
-
-        Args:
-            intent_name: Name of the intent
-
-        Returns:
-            Description string or None if intent doesn't exist
-        """
-        if intent_name in IntentDetector.INTENTS:
-            # Use keywords to create description
-            keywords = IntentDetector.INTENTS[intent_name]["keywords"][:3]
-            return f"Keywords: {', '.join(keywords)}"
-        return None

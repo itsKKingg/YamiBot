@@ -48,6 +48,17 @@ class ModelRouter:
             ("google", "gemini-1.5-pro"),
             ("groq", "llama-3.1-70b")
         ],
+        "math_code_analysis": [
+            ("google", "gemini-1.5-pro"),
+            ("google", "gemini-2.0-flash"),
+            ("cerebras", "gpt-oss-120b"),
+            ("groq", "llama-3.1-405b")
+        ],
+        "multimodal": [
+            ("google", "gemini-1.5-pro"),
+            ("google", "gemini-2.0-flash"),
+            ("google", "gemini-1.5-flash")
+        ],
         "reasoning": [
             ("google", "gemini-1.5-pro"),
             ("groq", "llama-3.1-405b"),
