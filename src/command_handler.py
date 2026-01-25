@@ -69,7 +69,7 @@ class CommandHandler:
         content = MessageValidator.extract_message_content(message, self.bot)
 
         # Classify intent
-        intent_result = self.intent_detector.classify_intent(content)
+        intent_result = self.intent_detector.classify_intent(content, message.attachments)
 
         # If no special intent (just chat), return False
         if intent_result["intent"] == "chat":
@@ -144,6 +144,9 @@ class CommandHandler:
 
             elif intent == "clear_specific":
                 await self._handle_clear_specific(message, params.get("count", 0))
+
+            elif intent in ["math_code_analysis", "multimodal"]:
+                await self._handle_analysis(message, params.get("query", ""), intent, intent_result.get("attachment_info"))
 
             # ============ JUICE WRLD API INTENTS (PRIMARY MUSIC SOURCE) ============
             elif intent == "juice_search":
@@ -669,6 +672,41 @@ class CommandHandler:
         return True
 
     # ============ JUICE WRLD PRIMARY INTENT HANDLERS ============
+
+    async def _handle_analysis(self, message: discord.Message, query: str, intent: str, attachment_info: Dict[str, Any] = None) -> None:
+        """
+        Handle math, code, or analysis requests using Google Gemini
+        """
+        logger.info(f"🔍 Analysis requested: '{query}' (intent: {intent}) with attachments: {attachment_info}")
+        
+        async with message.channel.typing():
+            # Get conversation context
+            thread_id = message.channel.id if isinstance(message.channel, discord.Thread) else None
+            messages = self.bot.conversation_manager.get_conversation_history(message.channel.id, thread_id)
+            
+            # Construct prompt
+            prompt = query if query else "Please analyze the attached content."
+            if attachment_info and attachment_info.get("has_attachments"):
+                types_str = ", ".join(attachment_info["types"])
+                prompt = f"[User provided {types_str} for analysis] {prompt}"
+
+            # Route to Gemini (google provider)
+            # Use the actual intent (math_code_analysis or multimodal) for intelligent routing
+            response, metadata = await self.bot.fallback_manager.get_response(
+                prompt=prompt,
+                intent=intent, 
+                messages=messages
+            )
+            
+            if response:
+                # Add to memory
+                self.bot.conversation_manager.add_message(message.channel.id, "user", prompt, thread_id)
+                self.bot.conversation_manager.add_message(message.channel.id, "assistant", response, thread_id)
+                
+                await message.reply(response)
+                logger.info("✅ Analysis completed successfully")
+            else:
+                await message.reply("❌ Sorry, I couldn't complete the analysis. Please try again.")
 
     async def _handle_juice_search(self, message: discord.Message, query: str) -> None:
         """
