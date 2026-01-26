@@ -1187,3 +1187,85 @@ def create_discord_juice_wrld_cover_art_embed(song: Dict) -> discord.Embed:
 
     embed.set_footer(text="Powered by Juice WRLD API")
     return embed
+
+
+# ============ FILE HANDLING HELPERS ============
+
+async def prepare_audio_file_for_discord(url: str, context: Optional[str] = None) -> Optional[discord.File]:
+    """
+    Prepare an audio file for Discord attachment
+    
+    Args:
+        url: Audio file URL
+        context: Optional context (e.g., "song preview")
+        
+    Returns:
+        discord.File object if file was downloaded and is embeddable, None otherwise
+    """
+    from ..file_handler import file_handler
+    
+    logger.info(f"🎵 Preparing audio file for Discord: {url}")
+    
+    try:
+        result = await file_handler.prepare_file_for_discord(url, context)
+        
+        if result['should_embed'] and result['file_path']:
+            logger.info(f"✅ Audio file ready for embedding: {result['file_path']}")
+            return discord.File(str(result['file_path']))
+        else:
+            logger.info(f"🔗 Audio file too large or failed, providing link only")
+            return None
+    
+    except Exception as e:
+        logger.error(f"❌ Error preparing audio file: {e}")
+        return None
+
+
+async def prepare_image_file_for_discord(url: str, context: Optional[str] = None) -> Optional[discord.File]:
+    """
+    Prepare an image file for Discord attachment
+    
+    Args:
+        url: Image file URL
+        context: Optional context (e.g., "cover art")
+        
+    Returns:
+        discord.File object if file was downloaded and is embeddable, None otherwise
+    """
+    from ..file_handler import file_handler
+    
+    logger.info(f"🖼️ Preparing image file for Discord: {url}")
+    
+    try:
+        result = await file_handler.prepare_file_for_discord(url, context)
+        
+        if result['should_embed'] and result['file_path']:
+            logger.info(f"✅ Image file ready for embedding: {result['file_path']}")
+            return discord.File(str(result['file_path']))
+        else:
+            logger.info(f"🔗 Image file too large or failed, providing link only")
+            return None
+    
+    except Exception as e:
+        logger.error(f"❌ Error preparing image file: {e}")
+        return None
+
+
+async def get_file_info_text(url: str) -> str:
+    """
+    Get formatted file information text for Discord message
+    
+    Args:
+        url: File URL
+        
+    Returns:
+        Formatted string with file info
+    """
+    from ..file_handler import file_handler
+    
+    try:
+        result = await file_handler.prepare_file_for_discord(url)
+        return result['info_text']
+    except Exception as e:
+        logger.error(f"❌ Error getting file info: {e}")
+        return f"🔗 [View file]({url})"

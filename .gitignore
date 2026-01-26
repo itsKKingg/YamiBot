@@ -46,6 +46,7 @@ coverage/
 
 # Cache
 .cache/
+file_cache/
 
 # Dependencies
 node_modules/
