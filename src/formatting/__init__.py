@@ -25,6 +25,10 @@ from .music_formatter import (
     create_discord_juice_wrld_stats_embed,
     create_discord_juice_wrld_eras_embeds,
     create_discord_juice_wrld_cover_art_embed,
+    # File handling helpers
+    prepare_audio_file_for_discord,
+    prepare_image_file_for_discord,
+    get_file_info_text,
 )
 
 __all__ = [
@@ -48,4 +52,8 @@ __all__ = [
     "create_discord_juice_wrld_stats_embed",
     "create_discord_juice_wrld_eras_embeds",
     "create_discord_juice_wrld_cover_art_embed",
+    # File handling helpers
+    "prepare_audio_file_for_discord",
+    "prepare_image_file_for_discord",
+    "get_file_info_text",
 ]
