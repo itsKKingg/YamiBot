@@ -14,6 +14,7 @@ import asyncio
 from .utils.logger import setup_logging
 from .intent_detector import IntentDetector
 from .message_validator import MessageValidator
+from .integrations.juice_wrld_router import get_juice_wrld_router, JuiceWRLDEndpoint
 from .formatting.music_formatter import (
     format_lyrics_card,
     format_song_card,
@@ -44,6 +45,7 @@ class CommandHandler:
         """
         self.bot = bot
         self.intent_detector = IntentDetector()
+        self.juice_wrld_router = get_juice_wrld_router()
         self.pending_confirmations = {}  # user_id: {message_id, action_type, params}
         self.processed_messages = set()  # Track processed message IDs to prevent duplicates
         self.max_processed_messages = 1000  # Limit size of tracking set
@@ -191,6 +193,11 @@ class CommandHandler:
 
             elif intent == "juice_producer_filter":
                 await self._handle_juice_producer_filter(message, params.get("producer", ""))
+
+            # ============ INTELLIGENT JUICE WRLD ROUTING (AUTO-DETECTION) ============
+            elif intent == "smart_juice_query":
+                logger.info(f"🎯 Routing to smart_juice_query handler: {params.get('query', '')}")
+                await self._handle_smart_juice_query(message, params.get("query", ""))
 
             # ============ LEGACY MUSIC INTENTS (ROUTED TO JUICE BY DEFAULT) ============
             elif intent == "music_lyrics":
@@ -1049,6 +1056,209 @@ class CommandHandler:
                     songs=songs,
                 )
             )
+
+    async def _handle_smart_juice_query(self, message: discord.Message, query: str) -> None:
+        """
+        Intelligent routing handler for Juice WRLD queries.
+        Automatically detects which endpoint to call based on query content.
+        
+        Args:
+            message: Discord message object
+            query: User's query
+        """
+        logger.info(f"🎯 Smart Juice WRLD routing for: '{query}' by user {message.author.id}")
+        
+        if not query:
+            await message.reply("What would you like to know about Juice WRLD?")
+            return
+        
+        if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+            logger.error("Juice WRLD API is not initialized!")
+            await message.reply("❌ Juice WRLD API is not available right now.")
+            return
+        
+        # Route the query to the appropriate endpoint
+        endpoint, params = self.juice_wrld_router.route_query(query)
+        
+        if endpoint is None:
+            logger.info(f"No specific endpoint matched. Defaulting to song search for: {query}")
+            # Fall back to regular song search
+            await self._handle_juice_search(message, query)
+            return
+        
+        logger.info(f"🎵 Routed to endpoint: {endpoint.value} with params: {params}")
+        
+        async with message.channel.typing():
+            try:
+                # Handle the routed request
+                if endpoint == JuiceWRLDEndpoint.SONG_SEARCH:
+                    await self._handle_juice_search(message, params.get("query", query))
+                
+                elif endpoint == JuiceWRLDEndpoint.SONG_LYRICS:
+                    await self._handle_juice_lyric_search(message, params.get("song_query", query))
+                
+                elif endpoint == JuiceWRLDEndpoint.ARTIST_STATS:
+                    await self._handle_juice_stats(message)
+                
+                elif endpoint == JuiceWRLDEndpoint.ALBUM_INFO:
+                    await self._handle_album_info(message, params.get("album_query", query))
+                
+                elif endpoint == JuiceWRLDEndpoint.FEATURED_ARTISTS:
+                    await self._handle_featured_artists(message, params.get("song_query"))
+                
+                elif endpoint == JuiceWRLDEndpoint.ERA_FILTER:
+                    await self._handle_juice_era_filter(message, params.get("era", query))
+                
+                elif endpoint == JuiceWRLDEndpoint.PRODUCER_FILTER:
+                    await self._handle_juice_producer_filter(message, params.get("producer"))
+                
+                elif endpoint == JuiceWRLDEndpoint.CATEGORY_FILTER:
+                    await self._handle_juice_category_filter(message, params.get("category", query))
+                
+                elif endpoint == JuiceWRLDEndpoint.STREAMING_LINKS:
+                    await self._handle_streaming_links(message, params.get("song_query", query))
+                
+                elif endpoint == JuiceWRLDEndpoint.RELATED_ARTISTS:
+                    await self._handle_related_artists(message)
+                
+                elif endpoint == JuiceWRLDEndpoint.CHARTS:
+                    await self._handle_charts(message, params.get("limit", 10))
+                
+                elif endpoint == JuiceWRLDEndpoint.PLAYLIST_RECOMMENDATIONS:
+                    await self._handle_playlist_recommendations(message, params.get("mood"))
+                
+                elif endpoint == JuiceWRLDEndpoint.BIOGRAPHY:
+                    await self._handle_biography(message)
+                
+                elif endpoint == JuiceWRLDEndpoint.RANDOM_SONG:
+                    await self._handle_juice_random(message)
+                
+                elif endpoint == JuiceWRLDEndpoint.ARCHIVE:
+                    await self._handle_archive(message, params.get("query", query))
+                
+                elif endpoint == JuiceWRLDEndpoint.COVER_ART:
+                    await self._handle_juice_cover_art(message, params.get("song_query", query))
+                
+                else:
+                    logger.warning(f"Unhandled endpoint: {endpoint}")
+                    await self._handle_juice_search(message, query)
+                
+                logger.info(f"✅ Smart routing completed for endpoint: {endpoint.value}")
+                
+            except Exception as e:
+                logger.error(f"❌ Error in smart routing for {endpoint.value}: {e}", exc_info=True)
+                await message.reply(f"❌ Sorry, I encountered an error while processing your request: {str(e)}")
+
+    # Helper methods for intelligent routing
+    
+    async def _handle_album_info(self, message, album_query: str):
+        """Handle album information requests"""
+        if not album_query:
+            await message.reply("Which album would you like to know about?")
+            return
+        
+        # Search for albums
+        albums = await self.bot.juice_wrld_api.search_albums(album_query, limit=5)
+        
+        if not albums:
+            await message.reply(f"❌ No albums found matching: **{album_query}**")
+            return
+        
+        # Show first album details
+        album = albums[0]
+        embed = create_discord_juice_wrld_embed(song={"title": album["title"], "album_info": album})
+        await message.reply(embed=embed)
+
+    async def _handle_featured_artists(self, message, song_query: Optional[str]):
+        """Handle featured artists requests"""
+        if song_query:
+            # Find song and show features
+            song = await self._resolve_juice_song(song_query=song_query, song_id=None)
+            if song and song.get("features"):
+                features = song["features"]
+                await message.reply(f"🎤 **Featured on '{song['title']}':** {', '.join(features)}")
+            else:
+                await message.reply("❌ No feature information found for that song.")
+        else:
+            # Show all featured artists
+            artists = await self.bot.juice_wrld_api.get_featured_artists(limit=20)
+            if artists:
+                artist_list = "\n".join([f"• {a['name']} ({a['song_count']} songs)" for a in artists[:10]])
+                await message.reply(f"🎤 **Featured Artists:**\n{artist_list}")
+            else:
+                await message.reply("❌ Could not retrieve featured artists.")
+
+    async def _handle_streaming_links(self, message, song_query: str):
+        """Handle streaming links requests"""
+        if not song_query:
+            await message.reply("Which song would you like streaming links for?")
+            return
+        
+        song = await self._resolve_juice_song(song_query=song_query, song_id=None)
+        if not song:
+            await message.reply("❌ Couldn't find that song.")
+            return
+        
+        # Get streaming links
+        song_id = song.get("id")
+        if song_id:
+            links = await self.bot.juice_wrld_api.get_streaming_links(song_id)
+            if links:
+                link_text = "\n".join([f"• {k.capitalize()}: {v}" for k, v in links.items() if v])
+                await message.reply(f"🎧 **Streaming Links for '{song['title']}':**\n{link_text}")
+            else:
+                await message.reply("❌ No streaming links available.")
+        else:
+            await message.reply("❌ Could not retrieve streaming links.")
+
+    async def _handle_related_artists(self, message):
+        """Handle related artists requests"""
+        artists = await self.bot.juice_wrld_api.get_related_artists(limit=10)
+        if artists:
+            artist_list = "\n".join([f"• {a['name']} (Similarity: {a.get('similarity_score', 'N/A')})" for a in artists])
+            await message.reply(f"🎵 **Artists Similar to Juice WRLD:**\n{artist_list}")
+        else:
+            await message.reply("❌ Could not retrieve related artists.")
+
+    async def _handle_charts(self, message, limit: int):
+        """Handle chart/top songs requests"""
+        songs = await self.bot.juice_wrld_api.get_charts(chart_type="top", limit=limit)
+        if songs:
+            song_list = "\n".join([f"{i+1}. {s['title']} ({s.get('play_count', 'N/A')} plays)" for i, s in enumerate(songs)])
+            await message.reply(f"📊 **Top {limit} Juice WRLD Songs:**\n{song_list}")
+        else:
+            await message.reply("❌ Could not retrieve chart data.")
+
+    async def _handle_playlist_recommendations(self, message, mood: Optional[str]):
+        """Handle playlist recommendations"""
+        songs = await self.bot.juice_wrld_api.get_playlist_recommendations(mood=mood, limit=10)
+        if songs:
+            mood_text = f" for '{mood}'" if mood else ""
+            song_list = "\n".join([f"{i+1}. {s['title']} - {s['artist']}" for i, s in enumerate(songs)])
+            await message.reply(f"🎵 **Playlist Recommendations{mood_text}:**\n{song_list}")
+        else:
+            await message.reply("❌ Could not generate playlist recommendations.")
+
+    async def _handle_biography(self, message):
+        """Handle biography requests"""
+        bio = await self.bot.juice_wrld_api.get_biography()
+        if bio:
+            bio_text = f"**Juice WRLD Biography**\n\n"
+            bio_text += f"**Full Name:** {bio.get('full_name', 'N/A')}\n"
+            bio_text += f"**Born:** {bio.get('birth_date', 'N/A')} in {bio.get('birth_place', 'N/A')}\n"
+            bio_text += f"**Died:** {bio.get('death_date', 'N/A')}\n"
+            bio_text += f"**Genres:** {', '.join(bio.get('genres', []))}\n"
+            bio_text += f"**Years Active:** {bio.get('years_active', 'N/A')}\n"
+            bio_text += f"**Labels:** {', '.join(bio.get('labels', []))}\n\n"
+            bio_text += f"**Biography:**\n{bio.get('biography', 'N/A')[:1000]}..."
+            
+            await message.reply(bio_text)
+        else:
+            await message.reply("❌ Could not retrieve biography.")
+
+    async def _handle_archive(self, message, query: str):
+        """Handle archive/download requests"""
+        await self._handle_juice_collection(message, query)
 
     async def _handle_music_lyrics(
         self,
