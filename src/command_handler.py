@@ -27,6 +27,11 @@ from .formatting.music_formatter import (
     create_discord_juice_wrld_eras_embeds,
     create_discord_juice_wrld_cover_art_embed,
 )
+from .formatting.response_formatter import (
+    format_response,
+    chunk_and_format_response,
+    ResponseFormatter,
+)
 
 logger = setup_logging(__name__)
 
@@ -283,56 +288,75 @@ class CommandHandler:
 
     async def _handle_search(self, message: discord.Message, query: str) -> None:
         """
-        Handle search command using Google Gemini
+        Handle search command using Google Gemini with unified response formatting
 
         Args:
             message: Discord message object
             query: Search query
         """
+        logger.info(f"🔍 Handling search: '{query}' by user {message.author.id}")
+        
         if not query:
             await message.reply("What would you like me to search for?")
             return
 
-        # Use Google Gemini with web search capability
         try:
-            async with message.channel.typing():
-                # Get thread ID if applicable
-                thread_id = None
-                if isinstance(message.channel, discord.Thread):
-                    thread_id = message.channel.id
+            # Use Google Gemini with web search capability
+            # Get thread ID if applicable
+            thread_id = None
+            if isinstance(message.channel, discord.Thread):
+                thread_id = message.channel.id
 
-                # Construct search prompt
-                search_prompt = f"Search for information about: {query}"
+            # Construct search prompt
+            search_prompt = f"Search for information about: {query}"
 
-                # Query using Google Gemini
-                response, metadata = await self.bot.fallback_manager.query(
-                    prompt=search_prompt,
-                    messages=[{"role": "user", "content": search_prompt}]
+            # Query using Google Gemini
+            response, metadata = await self.bot.fallback_manager.query(
+                prompt=search_prompt,
+                messages=[{"role": "user", "content": search_prompt}]
+            )
+
+            if response:
+                # Add to conversation
+                self.bot.conversation_manager.add_message(
+                    channel_id=message.channel.id,
+                    role="user",
+                    content=search_prompt,
+                    thread_id=thread_id
+                )
+                self.bot.conversation_manager.add_message(
+                    channel_id=message.channel.id,
+                    role="assistant",
+                    content=response,
+                    thread_id=thread_id
                 )
 
-                if response:
-                    # Add to conversation
-                    self.bot.conversation_manager.add_message(
-                        channel_id=message.channel.id,
-                        role="user",
-                        content=search_prompt,
-                        thread_id=thread_id
-                    )
-                    self.bot.conversation_manager.add_message(
-                        channel_id=message.channel.id,
-                        role="assistant",
-                        content=response,
-                        thread_id=thread_id
-                    )
-
-                    await message.reply(f"🔍 **Search results for '{query}':**\n\n{response}")
-                    logger.info(f"Search performed for '{query}' by user {message.author.id}")
-                else:
-                    await message.reply("❌ Sorry, I couldn't perform the search right now. Please try again.")
+                # Format response using unified formatter
+                response_data = {
+                    "query": query,
+                    "response": response,
+                    "metadata": metadata
+                }
+                chunks = chunk_and_format_response("search", response_data, "google_gemini")
+                
+                # Send first chunk as reply
+                await message.reply(chunks[0])
+                
+                # Send remaining chunks as follow-up messages
+                for chunk in chunks[1:]:
+                    await message.channel.send(chunk)
+                
+                logger.info(f"Search completed for '{query}' by user {message.author.id}")
+            else:
+                response_data = {"error": "Sorry, I couldn't perform the search right now. Please try again."}
+                response = format_response("search", response_data, "google_gemini")
+                await message.reply(response)
 
         except Exception as e:
             logger.error(f"Error during search: {e}", exc_info=True)
-            await message.reply("❌ An error occurred during the search.")
+            response_data = {"error": "An error occurred during the search."}
+            response = format_response("search", response_data, "google_gemini")
+            await message.reply(response)
 
     async def _handle_model_switch(self, message: discord.Message, model_name: str) -> None:
         """
@@ -717,16 +741,16 @@ class CommandHandler:
 
     async def _handle_juice_search(self, message: discord.Message, query: str) -> None:
         """
-        Handle Juice WRLD song search requests
+        Handle Juice WRLD song search requests with unified response formatting
 
         Args:
             message: Discord message object
             query: Search query (song title, ID, etc.)
         """
-        logger.info(f"🔍 Juice WRLD search requested: '{query}' by user {message.author.id}")
+        logger.info(f"🔍 Handling Juice WRLD search: '{query}' by user {message.author.id}")
         
         if not query:
-            await message.reply("What song would you like to search for?")
+            await message.reply("What Juice WRLD song would you like me to find?")
             return
 
         if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
@@ -734,43 +758,83 @@ class CommandHandler:
             await message.reply("❌ Juice WRLD API is not available right now.")
             return
 
-        async with message.channel.typing():
+        try:
             # If a numeric ID is provided, jump directly to details
             if query.strip().isdigit():
                 logger.info(f"📝 Fetching Juice WRLD song by ID: {query}")
                 song = await self.bot.juice_wrld_api.get_song(int(query.strip()))
                 if not song:
                     logger.warning(f"No song found for ID: {query}")
-                    await message.reply(f"❌ No song found for ID: {query}")
+                    # Format "not found" response
+                    response_data = {"error": f"No song found for ID: {query}"}
+                    response = format_response("juice_search", response_data, "juice_wrld")
+                    await message.reply(response)
                     return
+                
                 logger.info(f"✅ Found song by ID: {song.get('title')}")
-                await message.reply(embed=create_discord_juice_wrld_embed(song=song))
+                # Format single song response
+                response_data = {"song": song}
+                chunks = chunk_and_format_response("juice_song_info", response_data, "juice_wrld")
+                
+                # Send first chunk as reply
+                await message.reply(chunks[0])
+                
+                # Send remaining chunks as follow-up messages
+                for chunk in chunks[1:]:
+                    await message.channel.send(chunk)
                 return
 
-            logger.info(f"📝 Searching Juice WRLD API for: '{query}'")
+            # Search for songs
+            logger.info(f"🔍 Searching Juice WRLD API for: '{query}'")
             songs = await self.bot.juice_wrld_api.search_songs(query, limit=10)
             
             if not songs:
                 logger.warning(f"No Juice WRLD songs found for: {query}")
-                await message.reply(f"❌ No Juice WRLD songs found for: **{query}**")
+                # Format "no results" response
+                response_data = {"query": query, "songs": []}
+                response = format_response("juice_search", response_data, "juice_wrld")
+                await message.reply(response)
                 return
 
             logger.info(f"✅ Found {len(songs)} songs matching '{query}'")
 
-            # If the top result matches strongly, show full details (test checklist expectation)
+            # If the top result matches strongly, show full details
             if songs and self._is_strong_title_match(query, songs[0].get("title", "")):
                 song_id = songs[0].get("id")
                 if song_id is not None:
                     logger.info(f"📝 Fetching full details for strong match: {songs[0].get('title')}")
                     details = await self.bot.juice_wrld_api.get_song(song_id)
                     if details:
-                        logger.info(f"✅ Sending Juice WRLD song details for: {details.get('title')}")
-                        await message.reply(embed=create_discord_juice_wrld_embed(song=details))
+                        # Format single song response
+                        response_data = {"song": details}
+                        chunks = chunk_and_format_response("juice_song_info", response_data, "juice_wrld")
+                        
+                        # Send first chunk as reply
+                        await message.reply(chunks[0])
+                        
+                        # Send remaining chunks as follow-up messages
+                        for chunk in chunks[1:]:
+                            await message.channel.send(chunk)
+                        
+                        logger.info(f"✅ Sent Juice WRLD song details for: {details.get('title')}")
                         return
 
-            # Otherwise show a results embed
-            logger.info(f"✅ Sending Juice WRLD search results embed with {len(songs)} songs")
-            await message.reply(embed=create_discord_juice_wrld_search_embed(query=query, songs=songs))
+            # Format search results response
+            response_data = {"query": query, "songs": songs}
+            chunks = chunk_and_format_response("juice_search", response_data, "juice_wrld")
+            
+            # Send first chunk as reply
+            await message.reply(chunks[0])
+            
+            # Send remaining chunks as follow-up messages
+            for chunk in chunks[1:]:
+                await message.channel.send(chunk)
+
+            logger.info(f"✅ Sent Juice WRLD search results with {len(songs)} songs")
+
+        except Exception as e:
+            logger.error(f"Error in Juice WRLD search for '{query}': {e}", exc_info=True)
+            await message.reply("❌ I encountered an error while searching for Juice WRLD songs.")
 
     async def _handle_juice_lyric_search(self, message: discord.Message, phrase: str) -> None:
         if not phrase:
@@ -781,10 +845,25 @@ class CommandHandler:
             await message.reply("❌ Juice WRLD API is not available right now.")
             return
 
-        async with message.channel.typing():
+        try:
             songs = await self.bot.juice_wrld_api.lyric_search(phrase, limit=10)
-            embed = create_discord_juice_wrld_lyric_search_embed(phrase=phrase, songs=songs)
-            await message.reply(embed=embed)
+            
+            # Format response using unified formatter
+            response_data = {"phrase": phrase, "songs": songs}
+            chunks = chunk_and_format_response("juice_lyric_search", response_data, "juice_wrld")
+            
+            # Send first chunk as reply
+            await message.reply(chunks[0])
+            
+            # Send remaining chunks as follow-up messages
+            for chunk in chunks[1:]:
+                await message.channel.send(chunk)
+                
+        except Exception as e:
+            logger.error(f"Error in lyric search for '{phrase}': {e}", exc_info=True)
+            response_data = {"error": "I encountered an error while searching for that lyric phrase."}
+            response = format_response("juice_lyric_search", response_data, "juice_wrld")
+            await message.reply(response)
 
     async def _handle_juice_song_info(
         self,
@@ -1267,162 +1346,145 @@ class CommandHandler:
         api_source: Optional[str] = None
     ) -> None:
         """
-        Handle music lyrics requests
+        Handle music lyrics requests with unified response formatting
 
         Args:
             message: Discord message object
             query: Search query (song title, artist, etc.)
             api_source: API source recommendation from intent detector
         """
-        logger.info(f"🎵 Music lyrics requested: '{query}' (api_source: {api_source}) by user {message.author.id}")
+        logger.info(f"🎵 Handling music lyrics: '{query}' (api_source: {api_source}) by user {message.author.id}")
         
         if not query:
             await message.reply("What song's lyrics would you like me to find?")
             return
 
         try:
-            async with message.channel.typing():
-                # Determine which API to use
-                # api_source is one of: "juice_wrld", "genius", "soundcloud", or None
-                
-                # Track if we should try Genius as fallback
-                should_try_genius = False
+            # Determine which API to use
+            # api_source is one of: "juice_wrld", "genius", "soundcloud", or None
+            
+            # Track if we should try Genius as fallback
+            should_try_genius = False
 
-                if api_source == "juice_wrld":
-                    logger.info(f"📝 Routing lyrics request to Juice WRLD API for: '{query}'")
-                    # Use Juice WRLD API first (primary). Genius is backup for Juice WRLD songs only.
-                    if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
-                        await message.reply("⚠️ Juice WRLD API is unavailable, trying Genius backup...")
-                        should_try_genius = True
-                    else:
-                        try:
-                            # 1. Search and resolve the song from Juice WRLD API (Requirement #1)
-                            logger.info(f"Searching Juice WRLD API for: {query}")
-                            song = await self._resolve_juice_song(song_query=query, song_id=None)
+            if api_source == "juice_wrld":
+                logger.info(f"📝 Routing lyrics request to Juice WRLD API for: '{query}'")
+                # Use Juice WRLD API first (primary). Genius is backup for Juice WRLD songs only.
+                if not hasattr(self.bot, "juice_wrld_api") or self.bot.juice_wrld_api is None:
+                    logger.warning("Juice WRLD API unavailable, trying Genius fallback...")
+                    should_try_genius = True
+                else:
+                    try:
+                        # 1. Search and resolve the song from Juice WRLD API
+                        logger.info(f"Searching Juice WRLD API for: {query}")
+                        song = await self._resolve_juice_song(song_query=query, song_id=None)
 
-                            if not song or not song.get("id"):
-                                # Auto-fallback to Genius with notification (Requirement #4)
-                                await message.reply("⚠️ Song not found in Juice WRLD database, checking Genius...")
-                                should_try_genius = True
-                            else:
-                                # 2. Call the dedicated lyrics endpoint (Requirement #1)
-                                logger.info(f"Fetching lyrics from Juice WRLD API for song ID: {song.get('id')}")
-                                lyrics = await self.bot.juice_wrld_api.get_lyrics(song["id"])
-                                lyrics = (lyrics or "").strip()
+                        if not song or not song.get("id"):
+                            # Auto-fallback to Genius with notification
+                            logger.warning("Song not found in Juice WRLD database, checking Genius...")
+                            should_try_genius = True
+                        else:
+                            # 2. Call the dedicated lyrics endpoint
+                            logger.info(f"Fetching lyrics from Juice WRLD API for song ID: {song.get('id')}")
+                            lyrics = await self.bot.juice_wrld_api.get_lyrics(song["id"])
+                            lyrics = (lyrics or "").strip()
 
-                                if lyrics:
-                                    # Update song dict with retrieved lyrics
-                                    song["lyrics"] = lyrics
+                            if lyrics:
+                                # Update song dict with retrieved lyrics
+                                song["lyrics"] = lyrics
 
-                                    # 3. Format response as Discord embed with metadata (Requirement #1)
-                                    await message.reply(embed=create_discord_juice_wrld_embed(song=song))
+                                # Format response as unified response
+                                response_data = {
+                                    "song": song,
+                                    "lyrics": lyrics,
+                                    "source": "juice_wrld"
+                                }
+                                chunks = chunk_and_format_response("music_lyrics", response_data, "juice_wrld")
+                                
+                                # Send first chunk as reply
+                                await message.reply(chunks[0])
+                                
+                                # Send remaining chunks as follow-up messages
+                                for chunk in chunks[1:]:
+                                    await message.channel.send(chunk)
+                                
+                                logger.info(f"Juice WRLD lyrics retrieved from Juice WRLD API for: {query}")
+                                return
 
-                                    # 4. Send lyrics as plain text (chunked), preserving section labels like [Verse] (Requirement #2)
-                                    header = f"📜 **LYRICS — {song.get('title', 'Unknown')}**\n\n"
-
-                                    content = header + lyrics
-                                    if len(content) > 1900:
-                                        chunks = []
-                                        current_chunk = ""
-                                        for line in content.split("\n"):
-                                            if len(current_chunk) + len(line) + 1 > 1900:
-                                                chunks.append(current_chunk)
-                                                current_chunk = line + "\n"
-                                            else:
-                                                current_chunk += line + "\n"
-                                        if current_chunk:
-                                            chunks.append(current_chunk)
-
-                                        for chunk in chunks:
-                                            await message.channel.send(chunk)
-                                    else:
-                                        await message.channel.send(content)
-
-                                    logger.info(
-                                        f"Juice WRLD lyrics retrieved from Juice WRLD API for: {query} by user {message.author.id}"
-                                    )
-                                    return
-
-                                # No lyrics in Juice WRLD payload - fall back to Genius (backup)
-                                await message.reply("⚠️ Lyrics not found in Juice WRLD database, checking Genius...")
-                                should_try_genius = True
-
-                        except Exception as e:
-                            logger.error(f"Error retrieving from Juice WRLD API: {e}", exc_info=True)
-                            await message.reply("⚠️ Error accessing Juice WRLD database, checking Genius fallback...")
+                            # No lyrics in Juice WRLD payload - fall back to Genius
+                            logger.warning("Lyrics not found in Juice WRLD database, checking Genius...")
                             should_try_genius = True
 
-                if api_source == "genius" or should_try_genius:
-                    # Genius fallback (backup only): only for Juice WRLD songs when Juice WRLD API fails.
-                    if not self._is_probably_juice_query(query):
-                        await message.reply("❌ Genius fallback is only enabled for Juice WRLD songs.")
-                        return
+                    except Exception as e:
+                        logger.error(f"Error retrieving from Juice WRLD API: {e}", exc_info=True)
+                        logger.warning("Error accessing Juice WRLD database, checking Genius fallback...")
+                        should_try_genius = True
 
-                    if should_try_genius and api_source != "genius":
-                        # Notification already sent in Juice WRLD block
-                        pass
+            if api_source == "genius" or should_try_genius:
+                # Genius fallback (backup only): only for Juice WRLD songs when Juice WRLD API fails.
+                if not self._is_probably_juice_query(query):
+                    await message.reply("❌ Genius fallback is only enabled for Juice WRLD songs.")
+                    return
 
-                    # Use Genius API (Plain text output only)
-                    if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
-                        await message.reply("❌ Genius API is not configured. Please set GENIUS_ACCESS_TOKEN in .env")
-                        return
+                # Use Genius API (Plain text output only)
+                if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
+                    await message.reply("❌ Genius API is not configured. Please set GENIUS_ACCESS_TOKEN in .env")
+                    return
 
-                    # Search for the song
-                    songs = await self.bot.genius_api.search_songs(query, limit=3)
+                # Search for the song
+                logger.info(f"Searching Genius API for: {query}")
+                songs = await self.bot.genius_api.search_songs(query, limit=3)
 
-                    if not songs:
-                        if should_try_genius:
-                            await message.reply(f"❌ Song not found in either database (Juice WRLD or Genius) for: {query}")
-                        else:
-                            await message.reply(f"❌ No lyrics found for: {query}\n\nTry a different search term?")
-                        return
+                if not songs:
+                    error_msg = f"Song not found in either database (Juice WRLD or Genius) for: {query}" if should_try_genius else f"No lyrics found for: {query}"
+                    response_data = {"error": error_msg}
+                    response = format_response("music_lyrics", response_data, "genius")
+                    await message.reply(response)
+                    return
 
-                    # Get the first matching song with details
-                    song_id = songs[0].get('id')
-                    if song_id:
-                        song = await self.bot.genius_api.get_song(song_id)
-                        
-                        # Get full lyrics text
-                        lyrics = await self.bot.genius_api.get_lyrics(song_id)
+                # Get the first matching song with details
+                song_id = songs[0].get('id')
+                if song_id:
+                    song = await self.bot.genius_api.get_song(song_id)
+                    
+                    # Get full lyrics text
+                    lyrics = await self.bot.genius_api.get_lyrics(song_id)
 
-                        # Get annotations
-                        annotations = await self.bot.genius_api.get_song_annotations(song_id, limit=5)
+                    # Get annotations
+                    annotations = await self.bot.genius_api.get_song_annotations(song_id, limit=5)
 
-                        # Format response as PLAIN TEXT (no Discord embed)
-                        response = format_lyrics_card(song=song, lyrics=lyrics, annotations=annotations)
-                        
-                        # Split response if too long for Discord (2000 char limit)
-                        if len(response) > 1900:
-                            # Send in chunks
-                            chunks = []
-                            current_chunk = ""
-                            for line in response.split('\n'):
-                                if len(current_chunk) + len(line) + 1 > 1900:
-                                    chunks.append(current_chunk)
-                                    current_chunk = line + '\n'
-                                else:
-                                    current_chunk += line + '\n'
-                            if current_chunk:
-                                chunks.append(current_chunk)
-                            
-                            # Send first chunk as reply, rest as follow-ups
-                            await message.reply(chunks[0])
-                            for chunk in chunks[1:]:
-                                await message.channel.send(chunk)
-                        else:
-                            await message.reply(response)
+                    # Format response using unified formatter
+                    response_data = {
+                        "song": song,
+                        "lyrics": lyrics,
+                        "annotations": annotations,
+                        "source": "genius"
+                    }
+                    chunks = chunk_and_format_response("music_lyrics", response_data, "genius")
+                    
+                    # Send first chunk as reply
+                    await message.reply(chunks[0])
+                    
+                    # Send remaining chunks as follow-up messages
+                    for chunk in chunks[1:]:
+                        await message.channel.send(chunk)
+                    
+                    logger.info(f"Genius lyrics retrieved for: {query}")
+                else:
+                    response_data = {"error": "Could not retrieve song details"}
+                    response = format_response("music_lyrics", response_data, "genius")
+                    await message.reply(response)
 
-                        logger.info(f"Genius lyrics retrieved (plain text) for: {query} by user {message.author.id}")
-                    else:
-                        await message.reply("❌ Could not retrieve song details")
-
-                elif api_source == "soundcloud":
-                    # SoundCloud doesn't provide lyrics
-                    await message.reply("❌ SoundCloud doesn't provide lyrics. Use Genius for lyrics instead.")
+            elif api_source == "soundcloud":
+                # SoundCloud doesn't provide lyrics
+                response_data = {"error": "SoundCloud doesn't provide lyrics. Use Genius for lyrics instead."}
+                response = format_response("music_lyrics", response_data, "soundcloud")
+                await message.reply(response)
 
         except Exception as e:
             logger.error(f"Error handling music lyrics request: {e}", exc_info=True)
-            await message.reply("❌ Sorry, I couldn't get the lyrics right now. Please try again later.")
+            response_data = {"error": "Sorry, I couldn't get the lyrics right now. Please try again later."}
+            response = format_response("music_lyrics", response_data, None)
+            await message.reply(response)
 
     async def _handle_music_search(
         self,
@@ -1431,114 +1493,113 @@ class CommandHandler:
         api_source: Optional[str] = None
     ) -> None:
         """
-        Handle music search and embedding requests
+        Handle music search requests with unified response formatting
 
         Args:
             message: Discord message object
             query: Search query
             api_source: API source recommendation from intent detector
         """
-        logger.info(f"🎵 Music search requested: '{query}' (api_source: {api_source}) by user {message.author.id}")
+        logger.info(f"🎵 Handling music search: '{query}' (api_source: {api_source}) by user {message.author.id}")
         
         if not query:
             await message.reply("What would you like me to search for?")
             return
 
         try:
-            async with message.channel.typing():
-                # Determine API based on request type
-                # SoundCloud: Only for explicit SoundCloud track discovery
-                if api_source == "soundcloud":
-                    logger.info(f"📝 Routing search request to SoundCloud API for: '{query}'")
-                    # Use SoundCloud for track discovery ONLY on SoundCloud platform
-                    if not hasattr(self.bot, 'soundcloud_api') or self.bot.soundcloud_api is None:
-                        await message.reply(
-                            "❌ SoundCloud API is not configured. "
-                            "Please set SOUNDCLOUD_CLIENT_ID and SOUNDCLOUD_CLIENT_SECRET in .env"
-                        )
-                        return
-
-                    # Search for tracks on SoundCloud
-                    logger.info(f"Searching SoundCloud for: {query} by user {message.author.id}")
-                    tracks = await self.bot.soundcloud_api.search_tracks(query, limit=5)
-
-                    if not tracks:
-                        await message.reply(f"❌ No tracks found on SoundCloud for: {query}")
-                        return
-
-                    # Format response with SoundCloud track info
-                    response = f"🎧 **Found {len(tracks)} tracks on SoundCloud** matching '{query}':\n\n"
-                    
-                    for i, track in enumerate(tracks[:5], 1):
-                        title = track.get('title', 'Unknown Track')
-                        artist = track.get('artist', 'Unknown Artist')
-                        duration_ms = track.get('duration', 0)
-                        play_count = track.get('playback_count', 0)
-                        permalink = track.get('permalink_url', '')
-                        
-                        # Format duration
-                        if duration_ms:
-                            duration_sec = duration_ms // 1000
-                            minutes, seconds = divmod(duration_sec, 60)
-                            duration_str = f"{minutes}:{seconds:02d}"
-                        else:
-                            duration_str = "Unknown"
-                        
-                        response += f"{i}. **{title}** by {artist}\n"
-                        response += f"   ⏱️ Duration: {duration_str}"
-                        if play_count:
-                            response += f" | 🎮 {play_count:,} plays"
-                        response += "\n"
-                        if permalink:
-                            response += f"   🔗 [Listen on SoundCloud]({permalink})\n"
-                        response += "\n"
-                    
-                    response += "*Tracks found on SoundCloud platform*"
-                    
-                    await message.reply(response)
-                    logger.info(f"SoundCloud track discovery completed for: {query} by user {message.author.id}")
+            # Determine API based on request type
+            # SoundCloud: Only for explicit SoundCloud track discovery
+            if api_source == "soundcloud":
+                logger.info(f"📝 Routing search request to SoundCloud API for: '{query}'")
+                # Use SoundCloud for track discovery ONLY on SoundCloud platform
+                if not hasattr(self.bot, 'soundcloud_api') or self.bot.soundcloud_api is None:
+                    await message.reply(
+                        "❌ SoundCloud API is not configured. "
+                        "Please set SOUNDCLOUD_CLIENT_ID and SOUNDCLOUD_CLIENT_SECRET in .env"
+                    )
                     return
 
-                elif api_source == "juice_wrld":
-                    # Juice WRLD API is the primary music source
-                    logger.info(f"📝 Delegating to Juice WRLD handler for: '{query}'")
-                    await self._handle_juice_search(message, query)
-                    logger.info(f"✅ Juice WRLD handler completed for: '{query}'")
+                # Search for tracks on SoundCloud
+                logger.info(f"Searching SoundCloud for: {query} by user {message.author.id}")
+                tracks = await self.bot.soundcloud_api.search_tracks(query, limit=5)
+
+                if not tracks:
+                    response_data = {"error": f"No tracks found on SoundCloud for: {query}"}
+                    response = format_response("music_search", response_data, "soundcloud")
+                    await message.reply(response)
                     return
 
-                elif api_source == "genius" or api_source is None:
-                    # Use Genius for general music search
-                    if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
-                        await message.reply("❌ Genius API is not configured")
-                        return
+                # Format response using unified formatter
+                response_data = {
+                    "tracks": tracks,
+                    "query": query,
+                    "source": "soundcloud"
+                }
+                chunks = chunk_and_format_response("music_search", response_data, "soundcloud")
+                
+                # Send first chunk as reply
+                await message.reply(chunks[0])
+                
+                # Send remaining chunks as follow-up messages
+                for chunk in chunks[1:]:
+                    await message.channel.send(chunk)
+                
+                logger.info(f"SoundCloud track discovery completed for: {query}")
+                return
 
-                    # Search for songs
-                    songs = await self.bot.genius_api.search_songs(query, limit=5)
+            elif api_source == "juice_wrld":
+                # Juice WRLD API is the primary music source
+                logger.info(f"📝 Delegating to Juice WRLD handler for: '{query}'")
+                await self._handle_juice_search(message, query)
+                logger.info(f"✅ Juice WRLD handler completed for: '{query}'")
+                return
 
-                    if not songs:
-                        await message.reply(f"❌ No songs found for: {query}")
-                        return
-
-                    # Format response
-                    response = f"🎵 **Found {len(songs)} songs** matching '{query}':\n\n"
-                    for i, song in enumerate(songs[:5], 1):
-                        title = song.get('title', 'Unknown')
-                        artist = song.get('primary_artist', {}).get('name', 'Unknown')
-                        url = song.get('url', '')
-
-                        response += f"{i}. **{title}** by {artist}\n"
-                        if url:
-                            response += f"   🔗 [View on Genius]({url})\n"
-
+            elif api_source == "genius" or api_source is None:
+                # Use Genius for general music search
+                if not hasattr(self.bot, 'genius_api') or self.bot.genius_api is None:
+                    response_data = {"error": "Genius API is not configured"}
+                    response = format_response("music_search", response_data, "genius")
                     await message.reply(response)
-                    logger.info(f"Genius search performed for: {query} by user {message.author.id}")
+                    return
 
-                else:
-                    await message.reply("❌ I'm not sure which music service to use for that request.")
+                # Search for songs
+                logger.info(f"Searching Genius for: {query} by user {message.author.id}")
+                songs = await self.bot.genius_api.search_songs(query, limit=5)
+
+                if not songs:
+                    response_data = {"error": f"No songs found for: {query}"}
+                    response = format_response("music_search", response_data, "genius")
+                    await message.reply(response)
+                    return
+
+                # Format response using unified formatter
+                response_data = {
+                    "songs": songs,
+                    "query": query,
+                    "source": "genius"
+                }
+                chunks = chunk_and_format_response("music_search", response_data, "genius")
+                
+                # Send first chunk as reply
+                await message.reply(chunks[0])
+                
+                # Send remaining chunks as follow-up messages
+                for chunk in chunks[1:]:
+                    await message.channel.send(chunk)
+                
+                logger.info(f"Genius search performed for: {query}")
+                return
+
+            else:
+                response_data = {"error": "I'm not sure which music service to use for that request."}
+                response = format_response("music_search", response_data, None)
+                await message.reply(response)
 
         except Exception as e:
             logger.error(f"Error handling music search: {e}", exc_info=True)
-            await message.reply("❌ Sorry, I couldn't complete the search. Please try again later.")
+            response_data = {"error": "Sorry, I couldn't complete the search. Please try again later."}
+            response = format_response("music_search", response_data, None)
+            await message.reply(response)
 
     async def _handle_music_artist(
         self,
