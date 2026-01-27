@@ -31,6 +31,12 @@ from .music_formatter import (
     get_file_info_text,
 )
 
+from .response_formatter import (
+    format_response,
+    chunk_and_format_response,
+    ResponseFormatter,
+)
+
 __all__ = [
     "format_lyrics_card",
     "format_artist_bio",
@@ -56,4 +62,8 @@ __all__ = [
     "prepare_audio_file_for_discord",
     "prepare_image_file_for_discord",
     "get_file_info_text",
+    # Response formatter
+    "format_response",
+    "chunk_and_format_response",
+    "ResponseFormatter",
 ]
