@@ -54,6 +54,8 @@ class CommandHandler:
         self.pending_confirmations = {}  # user_id: {message_id, action_type, params}
         self.processed_messages = set()  # Track processed message IDs to prevent duplicates
         self.max_processed_messages = 1000  # Limit size of tracking set
+        self.message_locks = {}  # Dictionary of asyncio.Lock objects for each message ID
+        self.global_message_lock = asyncio.Lock()  # Global lock for message processing coordination
 
         logger.info("Command handler initialized")
 
@@ -67,10 +69,26 @@ class CommandHandler:
         Returns:
             True if message was a command and was handled, False otherwise
         """
-        # Check if we've already processed this message (prevent duplicates)
-        if message.id in self.processed_messages:
-            logger.warning(f"⚠️ Message {message.id} already processed, skipping to prevent duplicate response")
-            return True  # Return True to indicate it was handled (even though we're skipping)
+        message_id = message.id
+        
+        # 🔒 Acquire global lock first to prevent race conditions
+        async with self.global_message_lock:
+            # Check if we've already processed this message (prevent duplicates)
+            if message_id in self.processed_messages:
+                logger.warning(f"⚠️ Message {message_id} already processed, skipping to prevent duplicate response")
+                return True  # Return True to indicate it was handled (even though we're skipping)
+            
+            # Mark message as processed BEFORE handling to prevent race conditions
+            self.processed_messages.add(message_id)
+            
+            # Limit the size of the processed messages set
+            if len(self.processed_messages) > self.max_processed_messages:
+                # Remove oldest entries (though set doesn't maintain order, this limits memory)
+                excess = len(self.processed_messages) - self.max_processed_messages
+                for _ in range(excess):
+                    self.processed_messages.pop()
+        
+        # 🔓 Release global lock before processing to avoid blocking other messages
         
         # Extract clean message content
         content = MessageValidator.extract_message_content(message, self.bot)
@@ -82,16 +100,6 @@ class CommandHandler:
         if intent_result["intent"] == "chat":
             logger.debug(f"No command intent detected for message: {content[:50]}")
             return False
-
-        # Mark message as processed BEFORE handling to prevent race conditions
-        self.processed_messages.add(message.id)
-        
-        # Limit the size of the processed messages set
-        if len(self.processed_messages) > self.max_processed_messages:
-            # Remove oldest entries (though set doesn't maintain order, this limits memory)
-            excess = len(self.processed_messages) - self.max_processed_messages
-            for _ in range(excess):
-                self.processed_messages.pop()
 
         # Handle the intent
         intent = intent_result["intent"]
@@ -110,14 +118,14 @@ class CommandHandler:
         except Exception as e:
             logger.error(f"❌ Error handling intent {intent}: {e}", exc_info=True)
             # Remove from processed set if handling failed, so it can be retried
-            self.processed_messages.discard(message.id)
+            self.processed_messages.discard(message_id)
             raise
         
         return True
 
     async def _handle_intent(self, message: discord.Message, intent_result: Dict[str, any]) -> None:
         """
-        Route intent to appropriate handler
+        Route intent to appropriate handler with comprehensive debug logging
 
         Args:
             message: Discord message object
@@ -125,34 +133,46 @@ class CommandHandler:
         """
         intent = intent_result["intent"]
         params = intent_result.get("params", {})
+        api_source = intent_result.get("api_source", "unknown")
+        
+        logger.info(f"📍 Routing intent '{intent}' to handler (api_source: {api_source}, params: {params})")
 
         # Route to appropriate handler
         try:
             if intent == "clear_memory":
+                logger.info(f"🔧 Routing to clear_memory handler")
                 await self._handle_clear_memory(message)
 
             elif intent == "view_memory":
+                logger.info(f"🔧 Routing to view_memory handler")
                 await self._handle_view_memory(message)
 
             elif intent == "search":
+                logger.info(f"🔧 Routing to search handler")
                 await self._handle_search(message, params.get("query", ""))
 
             elif intent == "model_switch":
+                logger.info(f"🔧 Routing to model_switch handler")
                 await self._handle_model_switch(message, params.get("model_name", ""))
 
             elif intent == "model_list":
+                logger.info(f"🔧 Routing to model_list handler")
                 await self._handle_model_list(message)
 
             elif intent == "status":
+                logger.info(f"🔧 Routing to status handler")
                 await self._handle_status(message)
 
             elif intent == "remember_preference":
+                logger.info(f"🔧 Routing to remember_preference handler")
                 await self._handle_remember_preference(message, params.get("preference", ""))
 
             elif intent == "clear_specific":
+                logger.info(f"🔧 Routing to clear_specific handler")
                 await self._handle_clear_specific(message, params.get("count", 0))
 
             elif intent in ["math_code_analysis", "multimodal"]:
+                logger.info(f"🔧 Routing to analysis handler (intent: {intent})")
                 await self._handle_analysis(message, params.get("query", ""), intent, intent_result.get("attachment_info"))
 
             # ============ JUICE WRLD API INTENTS (PRIMARY MUSIC SOURCE) ============
@@ -165,6 +185,7 @@ class CommandHandler:
                 await self._handle_juice_lyric_search(message, params.get("phrase", ""))
 
             elif intent == "juice_song_info":
+                logger.info(f"🎵 Routing to juice_song_info handler")
                 await self._handle_juice_song_info(
                     message,
                     song_query=params.get("query"),
@@ -173,30 +194,39 @@ class CommandHandler:
                 )
 
             elif intent == "juice_eras_list":
+                logger.info(f"🎵 Routing to juice_eras_list handler")
                 await self._handle_juice_eras_list(message)
 
             elif intent == "juice_era_filter":
+                logger.info(f"🎵 Routing to juice_era_filter handler")
                 await self._handle_juice_era_filter(message, params.get("era", ""))
 
             elif intent == "juice_category_filter":
+                logger.info(f"🎵 Routing to juice_category_filter handler")
                 await self._handle_juice_category_filter(message, params.get("category", ""))
 
             elif intent == "juice_random":
+                logger.info(f"🎵 Routing to juice_random handler")
                 await self._handle_juice_random(message)
 
             elif intent == "juice_stats":
+                logger.info(f"🎵 Routing to juice_stats handler")
                 await self._handle_juice_stats(message)
 
             elif intent == "juice_cover_art":
+                logger.info(f"🎵 Routing to juice_cover_art handler")
                 await self._handle_juice_cover_art(message, params.get("query", ""))
 
             elif intent == "juice_stream":
+                logger.info(f"🎵 Routing to juice_stream handler")
                 await self._handle_juice_stream(message, params.get("query", ""))
 
             elif intent == "juice_collection":
+                logger.info(f"🎵 Routing to juice_collection handler")
                 await self._handle_juice_collection(message, params.get("query", ""))
 
             elif intent == "juice_producer_filter":
+                logger.info(f"🎵 Routing to juice_producer_filter handler")
                 await self._handle_juice_producer_filter(message, params.get("producer", ""))
 
             # ============ INTELLIGENT JUICE WRLD ROUTING (AUTO-DETECTION) ============
@@ -217,18 +247,20 @@ class CommandHandler:
 
             elif intent == "music_artist":
                 api_source = intent_result.get("api_source")
+                logger.info(f"🎵 Routing to music_artist handler (api_source: {api_source})")
                 await self._handle_music_artist(message, params.get("query", params.get("rest", "")), api_source)
 
             elif intent == "music_annotation":
                 api_source = intent_result.get("api_source")
+                logger.info(f"🎵 Routing to music_annotation handler (api_source: {api_source})")
                 await self._handle_music_annotation(message, params.get("query", params.get("rest", "")), api_source)
 
             else:
-                logger.warning(f"Unknown intent: {intent}")
+                logger.warning(f"❓ Unknown intent: {intent}")
                 await message.reply("I'm not sure how to handle that request. Could you rephrase it?")
 
         except Exception as e:
-            logger.error(f"Error handling intent {intent}: {e}", exc_info=True)
+            logger.error(f"❌ Error handling intent {intent}: {e}", exc_info=True)
             await message.reply("❌ An error occurred while processing your command.")
 
     async def _handle_clear_memory(self, message: discord.Message) -> None:

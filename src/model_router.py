@@ -20,7 +20,7 @@ class ModelRouter:
     user preferences, and provider health
     """
     
-    # Intent to model mapping (in priority order)
+    # Intent to model mapping (in priority order) - UPDATED: Gemini as default for chat
     INTENT_MODEL_MAPPING: Dict[str, List[Tuple[str, str]]] = {
         "coding": [
             ("cerebras", "gpt-oss-120b"),
@@ -43,9 +43,9 @@ class ModelRouter:
             ("groq", "mixtral-8x7b-32768")
         ],
         "math_logic": [
+            ("google", "gemini-1.5-pro"),
             ("groq", "llama-3.1-405b"),
             ("cerebras", "gpt-oss-120b"),
-            ("google", "gemini-1.5-pro"),
             ("groq", "llama-3.1-70b")
         ],
         "math_code_analysis": [
@@ -66,21 +66,22 @@ class ModelRouter:
             ("mistral", "mistral-large-2411")
         ],
         "fast": [
+            ("google", "gemini-1.5-flash"),
             ("groq", "mixtral-8x7b-32768"),
             ("groq", "llama-3.1-8b"),
-            ("mistral", "mistral-small"),
-            ("google", "gemini-1.5-flash")
+            ("mistral", "mistral-small")
         ],
         "general": [
+            ("google", "gemini-1.5-flash"),
+            ("google", "gemini-2.0-flash"),
             ("groq", "mixtral-8x7b-32768"),
-            ("mistral", "mistral-medium"),
-            ("cerebras", "gpt-oss-120b"),
-            ("google", "gemini-1.5-flash")
+            ("mistral", "mistral-medium")
         ],
         "chat": [
-            ("groq", "mixtral-8x7b-32768"),
+            ("google", "gemini-1.5-flash"),
+            ("google", "gemini-2.0-flash"),
             ("mistral", "mistral-medium"),
-            ("cerebras", "gpt-oss-120b")
+            ("groq", "mixtral-8x7b-32768")
         ],
         # Music intents - Genius API uses context-aware models
         "music_lyrics": [
@@ -288,7 +289,7 @@ class ModelRouter:
         
         # Last resort - return a default even if not available
         logger.error("No models available, returning default")
-        return "groq", "mixtral-8x7b-32768", "emergency_fallback"
+        return "google", "gemini-1.5-flash", "emergency_fallback"
     
     def _track_selection(self, provider: str, model: str, intent: str, method: str) -> None:
         """

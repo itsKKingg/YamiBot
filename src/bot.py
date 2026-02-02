@@ -390,13 +390,16 @@ class YamiBot(commands.Bot):
         # Check if message contains a command (natural language)
         if self.command_handler:
             try:
+                logger.info(f"🔍 Checking message for command intent: '{content[:50]}...'")
                 is_command = await self.command_handler.handle_message(message)
                 if is_command:
                     # Message was a command, don't process as regular chat
-                    logger.debug(f"Message was handled as command, skipping AI chat processing")
+                    logger.info(f"✅ Message processed as COMMAND, skipping AI chat processing")
                     return
+                else:
+                    logger.info(f"💬 No command intent detected, processing as AI chat")
             except Exception as e:
-                logger.error(f"Error in command handler: {e}", exc_info=True)
+                logger.error(f"❌ Error in command handler: {e}", exc_info=True)
                 # Continue with normal processing if command handler fails
 
         # ========== Step 6: Process Request (AI Chat) ==========
@@ -404,7 +407,7 @@ class YamiBot(commands.Bot):
         try:
             async with message.channel.typing():
                 logger.info(
-                    f"Processing message from {message.author} ({message.author.id}) "
+                    f"🤖 Processing AI CHAT request from {message.author} ({message.author.id}) "
                     f"[trusted={is_trusted}] in {message.channel}: {content[:100]}"
                 )
                 
