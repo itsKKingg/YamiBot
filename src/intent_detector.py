@@ -273,21 +273,25 @@ class IntentDetector:
         Classify the intent of a user message with multi-API routing and context awareness.
         """
         message_lower = message.lower().strip()
-        logger.debug(f"Classifying intent for message: '{message}'")
+        logger.debug(f"🎯 Classifying intent for message: '{message}'")
         attachment_info = IntentDetector._detect_attachments(attachments)
 
         implicit_music = IntentDetector._detect_implicit_music(message_lower)
         if implicit_music:
-            logger.info(f"🎯 Detected implicit music intent: {implicit_music['intent']}")
+            logger.info(f"🎵 Detected implicit music intent: {implicit_music['intent']}")
             implicit_music["attachment_info"] = attachment_info
             return implicit_music
 
+        # Try each intent and log matches
+        matched_intents = []
+        
         for intent_name, intent_data in IntentDetector.INTENTS.items():
             keyword_match = IntentDetector._check_keyword_match(message_lower, intent_data["keywords"])
             pattern_match, matched_pattern = IntentDetector._check_pattern_match(message_lower, intent_data.get("patterns", []))
-
+            
             if keyword_match or pattern_match:
                 if intent_name == "juice_search" and IntentDetector._is_artist_info_request(message_lower):
+                    logger.debug(f"🚫 Skipping juice_search - detected as artist info request: '{message}'")
                     continue
 
                 confidence = intent_data["confidence"]
@@ -298,14 +302,34 @@ class IntentDetector:
                 params = {}
                 if intent_data.get("extract_param", False):
                     params = IntentDetector._extract_parameters(message_lower, intent_name, matched_pattern)
+                    logger.debug(f"📝 Extracted parameters for {intent_name}: {params}")
 
                 api_source = IntentDetector.determine_api_source(message_lower, intent_name)
-                logger.info(f"🎯 Detected intent: {intent_name} (confidence: {confidence}, api_source: {api_source})")
-                return {"intent": intent_name, "confidence": confidence, "params": params, "api_source": api_source, "attachment_info": attachment_info}
+                
+                match_info = {
+                    "intent": intent_name,
+                    "confidence": confidence,
+                    "params": params,
+                    "api_source": api_source,
+                    "attachment_info": attachment_info,
+                    "keyword_match": keyword_match,
+                    "pattern_match": pattern_match is not None
+                }
+                matched_intents.append(match_info)
+                
+                logger.info(f"🎯 Intent match: {intent_name} (confidence: {confidence}, api_source: {api_source}, keyword: {keyword_match}, pattern: {pattern_match is not None})")
+
+        # Return the first (highest priority) match
+        if matched_intents:
+            selected_intent = matched_intents[0]
+            logger.info(f"✅ Selected intent: {selected_intent['intent']} (final choice)")
+            return selected_intent
 
         if attachment_info["has_attachments"]:
+            logger.info(f"📎 Detected multimodal intent with attachments: {attachment_info['types']}")
             return {"intent": "multimodal", "confidence": 0.8, "params": {"types": attachment_info["types"]}, "api_source": "gemini", "attachment_info": attachment_info}
 
+        logger.info(f"💬 No command intent detected - routing to chat: '{message[:50]}...'")
         return {"intent": "chat", "confidence": 1.0, "params": {}, "api_source": "llm", "attachment_info": attachment_info}
 
     @staticmethod
@@ -344,15 +368,39 @@ class IntentDetector:
 
     @staticmethod
     def determine_api_source(message: str, intent: Optional[str] = None) -> str:
-        """Intelligently determine which API to route the request to."""
+        """Intelligently determine which API to route the request to with detailed logging."""
         message_lower = message.lower()
-        if "gemini" in message_lower or intent == "math_code_analysis": return "gemini"
-        if "soundcloud" in message_lower: return "soundcloud"
+        
+        # Log routing decision
+        logger.debug(f"🔍 Determining API source for intent '{intent}' and message: '{message[:50]}...'")
+        
+        # Specific routing logic with detailed logging
+        if "gemini" in message_lower or intent == "math_code_analysis":
+            logger.debug(f"📍 Route: Gemini (explicit mention or math_code_analysis)")
+            return "gemini"
+            
+        if "soundcloud" in message_lower:
+            logger.debug(f"📍 Route: SoundCloud (explicit mention)")
+            return "soundcloud"
+            
         if intent == "music_lyrics":
-            if any(w in message_lower for w in ["juice", "lucid dreams", "rental", "all girls"]): return "juice_wrld"
-            return "genius"
-        if "juice" in message_lower or (intent and intent.startswith("juice_")): return "juice_wrld"
-        if intent and intent.startswith("music_"): return "juice_wrld"
+            if any(w in message_lower for w in ["juice", "lucid dreams", "rental", "all girls"]):
+                logger.debug(f"📍 Route: Juice WRLD (lyrics for Juice WRLD song)")
+                return "juice_wrld"
+            else:
+                logger.debug(f"📍 Route: Genius (general lyrics request)")
+                return "genius"
+                
+        if "juice" in message_lower or (intent and intent.startswith("juice_")):
+            logger.debug(f"📍 Route: Juice WRLD (Juice WRLD mention or intent)")
+            return "juice_wrld"
+            
+        if intent and intent.startswith("music_"):
+            logger.debug(f"📍 Route: Juice WRLD (music intent)")
+            return "juice_wrld"
+            
+        # Default routing - log as LLM for chat
+        logger.debug(f"📍 Route: LLM (default chat routing)")
         return "llm"
 
     @staticmethod

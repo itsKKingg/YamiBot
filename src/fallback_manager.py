@@ -56,12 +56,13 @@ class FallbackManager:
         self.bot = None  # Reference to bot instance for music API access
         
         # Provider priority order (from highest to lowest)
-        # Updated order: Cerebras → SambaNova → Groq → Mistral
+        # UPDATED: Google Gemini as primary default for chat
         self.provider_priority = [
-            "cerebras",
-            "sambanova",
-            "groq",
-            "mistral"
+            "google",      # Primary: Gemini for general chat and search
+            "cerebras",    # Secondary: Cerebras for coding and high-speed inference
+            "sambanova",   # Tertiary: SambaNova for enterprise
+            "groq",        # Quaternary: Groq for fast responses
+            "mistral"      # Last: Mistral for multi-lingual
         ]
     
     def set_shared_session(self, session):
@@ -268,13 +269,13 @@ Try any of them! They'll give you more info. 💡"
         from .providers.mistral_provider import MistralProvider
         from .providers.google_provider import GoogleProvider
 
-        # Provider classes in priority order: Cerebras → SambaNova → Groq → Mistral → Google
+        # Provider classes in priority order: Google (Gemini) → Cerebras → SambaNova → Groq → Mistral
         provider_classes = [
+            ("google", GoogleProvider),
             ("cerebras", CerebrasProvider),
             ("sambanova", SambanovaProvider),
             ("groq", GroqProvider),
-            ("mistral", MistralProvider),
-            ("google", GoogleProvider)
+            ("mistral", MistralProvider)
         ]
         
         # Initialize each provider individually with graceful error handling
@@ -493,7 +494,7 @@ Try any of them! They'll give you more info. 💡"
         """
         start_time = time.time()
         
-        # Select model using model router
+        # Select model using model router with detailed logging
         if self.model_router:
             selected_provider, selected_model, selection_reason = self.model_router.select_model(
                 intent=intent,
@@ -501,19 +502,24 @@ Try any of them! They'll give you more info. 💡"
             )
             
             logger.info(
-                f"Model router selected: {selected_provider}/{selected_model} "
+                f"🤖 Model router selected: {selected_provider}/{selected_model} "
                 f"(intent={intent}, reason={selection_reason})"
             )
+            
+            # Log if this is using Gemini as default
+            if selected_provider == "google" and selected_model == "gemini-1.5-flash":
+                logger.info(f"📍 Using Gemini as default API for intent '{intent}'")
+                
         else:
             # Fallback to default provider if no router
-            selected_provider, selected_model, selection_reason = "groq", "mixtral-8x7b-32768", "no_router"
-            logger.warning("No model router configured, using default provider")
+            selected_provider, selected_model, selection_reason = "google", "gemini-1.5-flash", "no_router"
+            logger.warning("🚨 No model router configured, using default Gemini provider")
         
         # Get provider instance
         provider = self._get_provider_by_name(selected_provider)
         
         if not provider:
-            logger.error(f"Provider {selected_provider} not available, falling back to default routing")
+            logger.error(f"❌ Provider {selected_provider} not available, falling back to default routing")
             return await self.query(prompt, messages=messages, **kwargs)
         
         # Update provider's model if it supports it
@@ -522,6 +528,7 @@ Try any of them! They'll give you more info. 💡"
         
         # Try the selected provider with fallback to next best models
         try:
+            logger.info(f"🔍 Routing query to {selected_provider}/{selected_model}")
             response, metadata = await self.query(prompt, messages=messages, **kwargs)
             
             # Update metadata with routing information
@@ -537,6 +544,9 @@ Try any of them! They'll give you more info. 💡"
             actual_provider = metadata.get("provider", selected_provider)
             if actual_provider == selected_provider:
                 self.last_used_model = selected_model
+                logger.info(f"✅ Successfully used {selected_provider}/{selected_model} for intent '{intent}'")
+            else:
+                logger.warning(f"⚠️ Fallback occurred: requested {selected_provider}/{selected_model}, got {actual_provider}")
             
             return response, metadata
             
